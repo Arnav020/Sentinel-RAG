@@ -19,9 +19,12 @@ load_dotenv()
 logfire.configure(token=os.getenv("LOGFIRE_TOKEN"))
 
 # Now safe to import app modules - logfire is already active
+from pathlib import Path
+
 from fastapi import FastAPI, Response
+from fastapi.staticfiles import StaticFiles
 from app.agents.graph import rag_agent
-from app.guardrails import initialize_rails, guard
+from app.guardrails import initialize_rails, guard, rails_ready
 
 from pydantic import BaseModel
 from typing import Optional
@@ -40,9 +43,18 @@ class QueryRequest(BaseModel):
     thread_id: Optional[str] = "default_user"
     
     
-@app.get("/")
-def home():
-    return {"message": "Enterprise LangGraph RAG API is live."}
+@app.get("/health")
+def health():
+    """
+    Liveness + readiness for container health checks and the web client's
+    status indicator. Reports whether the guardrail gate actually initialised,
+    so a backend serving traffic with the gate down is visibly degraded rather
+    than silently unprotected.
+    """
+    return {
+        "status": "ok",
+        "guardrails": rails_ready(),
+    }
 
 
 @app.get("/graph")
@@ -109,3 +121,23 @@ def query(request: QueryRequest):
             "status": "error",
             "sources": []
         }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Web client
+#
+# Mounted LAST on purpose: FastAPI resolves routes in declaration order, so
+# every API route above still wins over the catch-all static mount.
+#
+# Serving the UI from this same process removes a whole container, a Node
+# toolchain and a cross-origin hop — the client is plain HTML/CSS/JS with no
+# build step, so there is nothing to compile or keep in sync.
+# ─────────────────────────────────────────────────────────────────────────────
+_WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+if _WEB_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=_WEB_DIR, html=True), name="web")
+else:
+    # Never fail startup over a missing UI — the API is the product surface the
+    # eval suite and any programmatic client depend on.
+    logfire.warning(f"⚠️ Web client directory not found at {_WEB_DIR} — API-only mode.")

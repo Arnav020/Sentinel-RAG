@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark light" />
+<title>Sentinel-RAG</title>
+<meta name="description" content="Enterprise documentation assistant with layered guardrails." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3 5 8v8c0 6.6 4.5 12.7 11 14 6.5-1.3 11-7.4 11-14V8z' fill='%237c6bf5'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ─────────────────────────────  SIDEBAR  ───────────────────────────── -->
+  <aside class="sidebar" id="sidebar" aria-label="Session">
+    <div class="sidebar__head">
+      <div class="brand">
+        <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 3 5 8v8c0 6.6 4.5 12.7 11 14 6.5-1.3 11-7.4 11-14V8z" />
+          <path class="brand__check" d="M11 16.5l3.2 3.2L21 13" fill="none" stroke-width="2.2"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <div class="brand__text">
+          <span class="brand__name">Sentinel<span class="brand__accent">-RAG</span></span>
+          <span class="brand__sub">Documentation assistant</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar__body">
+      <section class="panel">
+        <h2 class="panel__title">Status</h2>
+        <div class="status" id="status" data-state="checking">
+          <span class="status__dot" aria-hidden="true"></span>
+          <span class="status__label" id="statusLabel">Connecting…</span>
+        </div>
+        <dl class="meta">
+          <div class="meta__row">
+            <dt>Session</dt>
+            <dd id="threadLabel" class="mono">—</dd>
+          </div>
+          <div class="meta__row">
+            <dt>Messages</dt>
+            <dd id="turnCount">0</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel__title">Knowledge base</h2>
+        <ul class="topics">
+          <li><span class="topics__dot"></span>Kubernetes Jobs &amp; CronJobs</li>
+          <li><span class="topics__dot"></span>Pod autoscaling (HPA / VPA)</li>
+          <li><span class="topics__dot"></span>Redis work queues</li>
+          <li><span class="topics__dot"></span>Job monitoring</li>
+          <li><span class="topics__dot"></span>Databricks job management</li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="sidebar__foot">
+      <button class="btn btn--ghost btn--block" id="newChat" type="button">
+        <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
+          <path d="M8 3.5v9M3.5 8h9" fill="none" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        New conversation
+      </button>
+    </div>
+  </aside>
+
+  <!-- ──────────────────────────────  MAIN  ─────────────────────────────── -->
+  <main class="main">
+    <header class="topbar">
+      <button class="btn btn--icon topbar__menu" id="menuToggle" type="button" aria-label="Toggle sidebar">
+        <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
+          <path d="M2.5 4h11M2.5 8h11M2.5 12h11" fill="none" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+      </button>
+      <div class="topbar__title">
+        <span class="topbar__name">Assistant</span>
+        <span class="topbar__hint" id="topbarHint">Grounded in your documentation</span>
+      </div>
+      <button class="btn btn--icon" id="themeToggle" type="button" aria-label="Toggle theme">
+        <svg viewBox="0 0 16 16" class="icon icon--sun" aria-hidden="true">
+          <circle cx="8" cy="8" r="3.2" fill="none" stroke-width="1.5" />
+          <path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2 3.1 3.1"
+                fill="none" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+        <svg viewBox="0 0 16 16" class="icon icon--moon" aria-hidden="true">
+          <path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z" fill="none" stroke-width="1.5"
+                stroke-linejoin="round" />
+        </svg>
+      </button>
+    </header>
+
+    <div class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions">
+      <!-- Empty state -->
+      <div class="welcome" id="welcome">
+        <div class="welcome__glyph" aria-hidden="true">
+          <svg viewBox="0 0 32 32">
+            <path d="M16 3 5 8v8c0 6.6 4.5 12.7 11 14 6.5-1.3 11-7.4 11-14V8z" />
+          </svg>
+        </div>
+        <h1 class="welcome__title">Ask about your infrastructure</h1>
+        <p class="welcome__body">
+          Answers are grounded in your indexed documentation — and cite the file they came from.
+          Off-topic and adversarial requests are refused at the gate.
+        </p>
+        <div class="suggestions" id="suggestions">
+          <button class="suggestion" type="button" data-q="How do I monitor the status of a Kubernetes Job?">
+            <span class="suggestion__label">Monitor a Job</span>
+            <span class="suggestion__text">How do I monitor the status of a Kubernetes Job?</span>
+          </button>
+          <button class="suggestion" type="button" data-q="How does Horizontal Pod Autoscaling work?">
+            <span class="suggestion__label">Autoscaling</span>
+            <span class="suggestion__text">How does Horizontal Pod Autoscaling work?</span>
+          </button>
+          <button class="suggestion" type="button" data-q="How do you start Redis for a Kubernetes work queue?">
+            <span class="suggestion__label">Work queues</span>
+            <span class="suggestion__text">How do you start Redis for a Kubernetes work queue?</span>
+          </button>
+          <button class="suggestion" type="button" data-q="When should you use the Databricks REST API instead of the CLI?">
+            <span class="suggestion__label">Databricks</span>
+            <span class="suggestion__text">When should you use the REST API instead of the CLI?</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="composer-wrap">
+      <form class="composer" id="composer" autocomplete="off">
+        <textarea id="input" class="composer__input" rows="1" placeholder="Ask about Kubernetes, autoscaling, work queues…"
+                  aria-label="Message" maxlength="4000"></textarea>
+        <button class="btn btn--send" id="send" type="submit" aria-label="Send message" disabled>
+          <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
+            <path d="M8 13V3.5M4 7l4-4 4 4" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </form>
+      <p class="composer__note">
+        <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
+      </p>
+    </div>
+  </main>
+
+  <div class="scrim" id="scrim" hidden></div>
+</div>
+
+<script src="/app.js" defer></script>
+</body>
+</html>

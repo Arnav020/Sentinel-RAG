@@ -62,7 +62,7 @@ The project uses a `.env` file for local development. All configuration is manag
 
 | Variable | Description | Example |
 | :--- | :--- | :--- |
-| `BACKEND_URL` | URL the Streamlit UI uses to reach the FastAPI backend | `http://localhost:8000` |
+| `FLASHRANK_CACHE_DIR` | Where the FlashRank ONNX reranker is cached. Containers point this at a path baked at build time; locally it defaults to the OS temp dir. | OS temp dir |
 
 ---
 

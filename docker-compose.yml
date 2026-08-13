@@ -1,13 +1,16 @@
 # =============================================================================
 # Sentinel-RAG — local orchestration
 #
-#   docker compose up --build              backend + UI
-#   docker compose --profile ingest run --rm ingest DATA --wipe
+#   docker compose up --build                                   app on :8000
+#   docker compose --profile ingest run --rm ingest DATA --wipe  one-shot ingest
 #   docker compose logs -f backend
 #   docker compose down
 #
-# Qdrant is a managed cloud service, so there is no vector-DB container here —
-# only the two services this repo actually builds.
+# One service, not two: the web client is static files served by the same
+# FastAPI process, so there is no UI container, no Node build, and no
+# cross-origin configuration to get wrong.
+#
+# Qdrant is a managed cloud service, so there is no vector-DB container either.
 # =============================================================================
 
 services:
@@ -16,45 +19,23 @@ services:
       context: .
       target: backend
     image: sentinel-rag:backend
-    container_name: sentinel-backend
+    container_name: sentinel-rag
     # Secrets are injected at runtime, never baked into the image
-    # (.dockerignore excludes .env from the build context for exactly this reason).
+    # (.dockerignore keeps .env out of the build context for exactly this reason).
     env_file: .env
     environment:
-      # Inside a container "localhost" is the container itself. The UI reaches
-      # the backend over the compose network by service name, so any BACKEND_URL
-      # in .env must not leak in here.
+      # Tracing is opt-in; leaving it on without a key produces noisy 401s.
       LANGSMITH_TRACING: "false"
     ports:
       - "8000:8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/',timeout=4).status==200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=4).status==200 else 1)"]
       interval: 30s
       timeout: 5s
       # Generous: NeMo Guardrails and LangGraph import before the socket binds.
       start_period: 90s
       retries: 3
-
-  ui:
-    build:
-      context: .
-      target: ui
-    image: sentinel-rag:ui
-    container_name: sentinel-ui
-    env_file: .env
-    environment:
-      # Overrides whatever BACKEND_URL is in .env — `environment` wins over
-      # `env_file`, and the app's load_dotenv() does not override real env vars.
-      BACKEND_URL: "http://backend:8000"
-    ports:
-      - "8501:8501"
-    depends_on:
-      backend:
-        # Wait for the backend to answer, not merely to start, so the first
-        # message typed into the UI cannot race a still-importing backend.
-        condition: service_healthy
-    restart: unless-stopped
 
   # One-shot ingestion job. Not started by `up` — run it explicitly:
   #   docker compose --profile ingest run --rm ingest DATA --wipe
@@ -66,8 +47,8 @@ services:
     profiles: ["ingest"]
     env_file: .env
     volumes:
-      # DATA/ is excluded from the build context (large, and it changes often),
-      # so it is mounted read-only at run time instead.
+      # DATA/ is excluded from the build context (large, changes independently
+      # of the code), so it is mounted read-only at run time instead.
       - ./DATA:/app/DATA:ro
       # Chunk metadata written by the processor, surfaced back on the host.
       - ./processed_data:/app/processed_data

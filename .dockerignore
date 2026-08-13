@@ -1,9 +1,8 @@
 # =============================================================================
 # Build context exclusions.
 #
-# NOTE: ui/ is intentionally NOT excluded any more — the `ui` build target
-# copies it. Excluding it (as a previous revision did) makes that target fail
-# with a confusing "file not found" during COPY.
+# NOTE: web/ must NOT be excluded — the backend target copies it and serves it
+# as the client. Excluding it makes COPY fail with a confusing "not found".
 # =============================================================================
 
 # --- Secrets: never enter the build context ---------------------------------

@@ -261,7 +261,7 @@ Non-obvious problems found and fixed. Each documented in [`DOCS/`](DOCS/).
 | **Reranking** | FlashRank cross-encoder (local ONNX) |
 | **Embeddings** | `all-mpnet-base-v2` sentence-transformers — **local**, no API key or quota |
 | **Ingestion** | PDF · HTML · TXT · DOCX · PPTX, parsed on-device |
-| **API / UI** | FastAPI · Streamlit with live reasoning-step transparency and source attribution |
+| **API / UI** | FastAPI serving a dependency-free web client — no Node, no build step, same origin |
 | **Observability** | Pydantic Logfire + LangSmith — nested spans across every node |
 | **Evaluation** | RAGAS (independent judge) + guardrail precision/recall + LLM-free retrieval diagnostics |
 
@@ -279,7 +279,7 @@ app/
 ├── config.py          # centralised settings + model tiering
 └── main.py            # FastAPI entrypoint — guardrail gate + /query
 evals/                 # golden_dataset · pipeline · guardrails_eval · metrics · dashboard
-ui/                    # Streamlit chat client
+web/                   # Web client — index.html · styles.css · app.js (no build step)
 DATA/                  # 6 source documents + 58 distractors
 DOCS/                  # 11 architecture and operations guides
 ```
@@ -296,18 +296,17 @@ pip install -r requirements.txt
 # 2. Ingest — parses DATA/, embeds locally, indexes into Qdrant
 python -m app.ingestion.processor DATA --wipe
 
-# 3. Run
-uvicorn app.main:app --reload --port 8000   # terminal 1
-streamlit run ui/app.py                     # terminal 2
+# 3. Run — API and web client are the same process
+uvicorn app.main:app --reload --port 8000   # → http://localhost:8000
 
 # 4. Evaluate (optional)
 streamlit run evals/app.py
 ```
 
-**Or run it containerised** — backend and UI, with model weights baked into the image so the first query never waits on a download:
+**Or run it containerised** — one image, with model weights baked in so the first query never waits on a download:
 
 ```powershell
-docker compose up --build                                  # UI → :8501, API → :8000
+docker compose up --build                                   # → http://localhost:8000
 docker compose --profile ingest run --rm ingest DATA --wipe # one-shot ingestion
 ```
 
@@ -328,7 +327,6 @@ LANGSMITH_TRACING = false
 LANGSMITH_ENDPOINT = https://api.smith.langchain.com
 LANGSMITH_API_KEY = ""
 LANGSMITH_PROJECT = ""
-BACKEND_URL = "http://localhost:8000"
 JUDGE_GROQ = ""                     # optional — falls back to GROQ_API_KEY
 ```
 

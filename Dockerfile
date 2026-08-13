@@ -2,20 +2,19 @@
 # Sentinel-RAG — multi-stage, multi-target build
 #
 #   docker build --target backend -t sentinel-rag:backend .
-#   docker build --target ui      -t sentinel-rag:ui      .
 #   docker build --target ingest  -t sentinel-rag:ingest  .
 #
-# Three design decisions worth knowing before editing:
+# Two design decisions worth knowing before editing:
 #
 # 1. torch comes from the CPU wheel index. The default PyPI wheel is the CUDA
 #    build (~2.5 GB of GPU libraries this workload never touches).
 #
 # 2. Both models are downloaded at BUILD time, not first request. The embedding
-#    model is ~420 MB; downloading it on the first query blows past the UI's
-#    60 s timeout and makes a cold container look broken.
+#    model is ~420 MB; downloading it on the request path makes a cold container
+#    look broken.
 #
-# 3. The UI is a separate target. It is an HTTP client with no ML dependencies,
-#    so it has no reason to carry torch.
+# The web client is plain HTML/CSS/JS served by the same FastAPI process, so
+# there is no UI image, no Node toolchain, and no cross-origin hop.
 # =============================================================================
 
 ARG PYTHON_VERSION=3.12
@@ -84,6 +83,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
 COPY --from=pydeps /opt/venv /opt/venv
 COPY --from=models /opt/models /opt/models
 COPY --chown=appuser:appuser app/ ./app/
+# Static web client, served by FastAPI from the same process.
+COPY --chown=appuser:appuser web/ ./web/
 
 RUN chown -R appuser:appuser /opt/models
 USER appuser
@@ -92,35 +93,11 @@ EXPOSE 8000
 
 # No curl in a slim image — use the interpreter that is already here.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/',timeout=4).status==200 else 1)"
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=4).status==200 else 1)"
 
 # Single worker on purpose: each worker loads its own ~420 MB embedding model
 # and its own NeMo rails. Scale with replicas, not workers.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
-
-
-# ----------------------------------------------------------------- ui --------
-FROM base AS ui
-
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-COPY requirements-ui.txt .
-RUN pip install --no-cache-dir -r requirements-ui.txt
-
-COPY --chown=appuser:appuser ui/ ./ui/
-USER appuser
-
-EXPOSE 8501
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health',timeout=4).status==200 else 1)"
-
-CMD ["streamlit", "run", "ui/app.py", \
-     "--server.port=8501", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true", \
-     "--browser.gatherUsageStats=false"]
 
 
 # ------------------------------------------------------------- ingest --------

@@ -47,6 +47,12 @@ def initialize_rails() -> None:
     logfire.info("🛡️ NeMo Guardrails initialised (input rails: injection + topic).")
 
 
+def rails_ready() -> bool:
+    """True once initialize_rails() has built the singleton. Surfaced on /health
+    so a backend running with the gate down is visibly degraded."""
+    return _rails is not None
+
+
 def _extract_response_text(result) -> str:
     """GenerationResponse.response is a list of message dicts; plain generate() returns a dict."""
     response = getattr(result, "response", result)
