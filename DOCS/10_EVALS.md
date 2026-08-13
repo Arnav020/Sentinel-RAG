@@ -1043,7 +1043,7 @@ tool correctness   → manual Jaccard — no DeepEval ToolCorrectnessMetric (req
 
 ## See Also
 
-- `notebooks/03_evals.ipynb` — all 6 experiments runnable end-to-end
+- `evals/metrics.py` — all 6 metrics as run by the production eval suite
 - `app/agents/nodes/planner.py` — the node whose tool routing Tool Correctness validates
 - `app/agents/nodes/responder.py` — the node Faithfulness and Answer metrics validate
 - `DOCS/03_NODE_INTELLIGENCE.md` — how the planner/retriever/responder nodes work

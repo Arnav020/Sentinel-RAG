@@ -543,7 +543,7 @@ Use both together: guardrails at the gate, gateway for everything that passes th
 
 ## See Also
 
-- `notebooks/02_llm_gateway.ipynb` — live runnable experiments from baseline to full production gateway
+- `app/gateway/client.py` — the production gateway implementation described in this guide
 - `app/main.py` — FastAPI entry point where the gateway wraps all LLM calls
 - `app/agents/nodes/` — swap `ChatGroq` for `ChatOpenAI` + Portkey here
 - `DOCS/08_GUARDRAILS.md` — NeMo Guardrails (the safety layer that runs before the gateway)

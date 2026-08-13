@@ -376,7 +376,7 @@ def query(request: QueryRequest):
 
 ## See Also
 
-- `notebooks/01_guardrails.ipynb` — live runnable experiments from baseline to full production system
+- `app/guardrails/` — the production implementation described throughout this guide
 - `app/main.py` — FastAPI entry point where guardrails are integrated
 - `app/agents/graph.py` — LangGraph pipeline that runs after guardrails pass a request
 
