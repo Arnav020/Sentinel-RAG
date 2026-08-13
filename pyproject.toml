@@ -1,0 +1,20 @@
+[project]
+name = "agentic-rag"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Arnav Joshi", email = "arnavjoshi020@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+agentic-rag = "agentic_rag:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = false

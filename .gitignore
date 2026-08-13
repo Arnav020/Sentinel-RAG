@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets — never commit real credentials
+.env
+.env.local
+
+# Generated/derivative data — regenerate via app/ingestion/processor.py
+processed_data/
+
+# Large unrelated filler corpus — not part of the actual demo/portfolio content
+DATA/noisy_data/
