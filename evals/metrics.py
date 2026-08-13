@@ -72,10 +72,26 @@ CONTEXT_TRUNCATE = None  # no truncation
 CONTEXT_LIMIT = 5        # matches rerank top_n in app/agents/nodes/retriever.py
 
 
+# RAGAS asks the judge for structured JSON. With full (untruncated) contexts and
+# full-length answers, Faithfulness enumerates many statements, so the JSON reply
+# is long — under the default output cap it gets cut mid-object and Groq rejects
+# it (`IncompleteOutputException` / `json_validate_failed`, measured 0/4 success).
+# Raising the cap fixed it outright (4/4). `reasoning_effort=low` keeps the
+# reasoning preamble from eating that budget.
+JUDGE_MAX_TOKENS = 16000
+JUDGE_REASONING_EFFORT = "low"
+
+
 def _build_judge():
     api_key = os.getenv("JUDGE_GROQ") or os.getenv("GROQ_API_KEY")
     client = AsyncOpenAI(api_key=api_key, base_url=GROQ_BASE_URL, max_retries=5)
-    llm = llm_factory(JUDGE_MODEL, provider="openai", client=client)
+    llm = llm_factory(
+        JUDGE_MODEL,
+        provider="openai",
+        client=client,
+        max_tokens=JUDGE_MAX_TOKENS,
+        reasoning_effort=JUDGE_REASONING_EFFORT,
+    )
     embeddings = HuggingFaceEmbeddings(
         model="sentence-transformers/all-MiniLM-L6-v2",
         use_api=False,
@@ -111,23 +127,39 @@ def _prep_samples(golden_dataset: dict) -> list:
 
 
 def _score_df(metric_key: str, samples: list, scores) -> pd.DataFrame:
-    return pd.DataFrame([
-        {"question": s["question"][:65], metric_key: round(float(r.value), 3)}
-        for s, r in zip(samples, scores)
-    ])
+    """Build the per-question frame, dropping samples whose scoring failed (None)."""
+    rows = []
+    for s, r in zip(samples, scores):
+        if r is None:
+            continue
+        rows.append({"question": s["question"][:65], metric_key: round(float(r.value), 3)})
+    if not rows:
+        raise RuntimeError(f"Every sample failed to score for '{metric_key}'.")
+    return pd.DataFrame(rows)
 
 
 async def _batched_score(metric, inputs: list, samples: list, status_cb=None, label: str = "") -> list:
     """
-    Runs abatch_score in chunks of GENERAL_BATCH_SIZE with cooldowns between chunks.
-    Keeps each burst under 6,000 TPM on Groq's on_demand tier.
+    Runs abatch_score one chunk at a time with cooldowns, keeping each burst
+    under the judge's TPM ceiling.
+
+    A sample that fails to score yields None rather than aborting the run: a full
+    pass takes ~80 minutes, so one bad sample must not discard the other 14.
+    Failures are surfaced via status_cb and logged, never silently dropped.
     """
     all_scores = []
     batches = [inputs[i : i + GENERAL_BATCH_SIZE] for i in range(0, len(inputs), GENERAL_BATCH_SIZE)]
     for b_idx, batch in enumerate(batches):
         if b_idx > 0:
             await _cooldown(COOLDOWN_MINI, f"{label} batch {b_idx}", status_cb)
-        scores = await metric.abatch_score(batch)
+        try:
+            scores = await metric.abatch_score(batch)
+        except Exception as e:
+            msg = f"⚠️ {label} batch {b_idx + 1}/{len(batches)} failed to score: {type(e).__name__}: {e}"
+            logfire.error(msg)
+            if status_cb:
+                status_cb(msg)
+            scores = [None] * len(batch)
         all_scores.extend(scores)
     return all_scores
 
