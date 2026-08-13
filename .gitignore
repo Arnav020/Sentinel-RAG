@@ -23,3 +23,7 @@ DATA/noisy_data/
 
 # Local R&D notebooks — exploratory work, kept out of the published repo
 notebooks/
+
+# Local build logs
+docker-build.log
+*.log

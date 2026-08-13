@@ -10,8 +10,8 @@
 
 | Target | Contains | Approx. size | Purpose |
 |---|---|---|---|
-| `backend` | FastAPI + LangGraph + torch (CPU) + baked models + web client | ~2.0–2.5 GB | Serves the API **and** the UI |
-| `ingest` | `backend` + Office parsers | ~2.6 GB | One-shot batch ingestion |
+| `backend` | FastAPI + LangGraph + torch (CPU) + baked models + web client | **1.36 GB** (measured) | Serves the API **and** the UI |
+| `ingest` | `backend` + Office parsers | ~1.8 GB | One-shot batch ingestion |
 
 There is **no UI container**: the web client is static HTML/CSS/JS served by the
 same FastAPI process, so there is no Node toolchain, no build step, and no
@@ -45,6 +45,10 @@ docker compose up --build
 First build takes roughly **10–20 minutes** (torch + a ~420 MB embedding model +
 a FlashRank ONNX model). Rebuilds after a code change take seconds, because
 dependencies and models live in earlier cached layers.
+
+Verified on a clean build: image **1.36 GB**, container reports `(healthy)`, and
+the **first** query in a fresh container returns in **3.9 s** — the models are
+baked in, so nothing is downloaded on the request path.
 
 ```powershell
 docker compose logs -f backend      # follow logs
@@ -129,10 +133,19 @@ The health gate still matters: NeMo Guardrails and LangGraph import for
 | `requirements-prod.txt` | `backend` target | Exactly what `app/` imports on the request path |
 | `requirements-ingest.txt` | `ingest` target | Office parsers layered on prod |
 
-`requirements-prod.txt` is derived from an AST scan of every module under `app/`,
-not maintained by hand. Two packages it previously omitted — `sentence-transformers`
-and `groq` — are now mandatory: without them the container starts cleanly and
-then fails on the first query, which is the worst possible failure mode.
+`requirements-prod.txt` and `requirements-ingest.txt` are **generated, not
+hand-written**: the full transitive closure is resolved from the working
+development environment and pinned at the versions actually installed there
+(149 and 37 packages respectively), with markers evaluated for linux/cpython
+3.12 rather than the Windows host.
+
+Pinning the whole closure matters because this project's dependency conflicts
+were settled by selectively upgrading and downgrading packages. A top-level-only
+pin lets pip re-resolve inside the image and land back on a broken combination —
+hand-maintained pins had already drifted (`langsmith` was recorded as `0.8.3`
+while the working environment ran `0.10.18`).
+
+Regenerate after changing dependencies locally rather than editing by hand.
 
 ---
 
@@ -141,6 +154,7 @@ then fails on the first query, which is the worst possible failure mode.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `open //./pipe/dockerDesktopLinuxEngine` | Docker Desktop not running | Start it, wait for "Engine running" |
+| `invalid env file: variable 'X ' contains whitespaces` | `.env` written as `KEY = value` | Docker's parser reads the name as `'KEY '`. Rewrite as `KEY=value` — python-dotenv accepts both, Docker only the latter |
 | `COPY web/: not found` | `web/` excluded in `.dockerignore` | It must **not** be — the backend target copies it |
 | Blank page at `:8000`, API works | `web/` missing from the image | `web/` must not be in `.dockerignore`; check `docker compose exec backend ls web` |
 | Backend unhealthy for ~60 s after start | Normal — imports precede socket bind | `start_period: 90s` already accounts for it |
