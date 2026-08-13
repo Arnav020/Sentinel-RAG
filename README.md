@@ -304,6 +304,15 @@ streamlit run ui/app.py                     # terminal 2
 streamlit run evals/app.py
 ```
 
+**Or run it containerised** — backend and UI, with model weights baked into the image so the first query never waits on a download:
+
+```powershell
+docker compose up --build                                  # UI → :8501, API → :8000
+docker compose --profile ingest run --rm ingest DATA --wipe # one-shot ingestion
+```
+
+See [DOCS/12_DOCKER.md](DOCS/12_DOCKER.md) for the image breakdown and troubleshooting.
+
 <details>
 <summary><b>Environment configuration</b></summary>
 
@@ -344,7 +353,7 @@ Wait for `Application startup complete` before the first message — NeMo and La
 | 03 | [Node Intelligence](DOCS/03_NODE_INTELLIGENCE.md) | 09 | [LLM Gateway](DOCS/09_LLM_GATEWAY.md) |
 | 04 | [Observability](DOCS/04_TRACING_AND_OBSERVABILITY.md) | 10 | [Evals](DOCS/10_EVALS.md) |
 | 05 | [Environment Variables](DOCS/05_ENVIRONMENT_VARIABLES.md) | 11 | [Evals Pipeline](DOCS/11_EVALS_PIPELINE.md) |
-| 06 | [Known Gotchas](DOCS/06_KNOWN_GOTCHAS.md) | | |
+| 06 | [Known Gotchas](DOCS/06_KNOWN_GOTCHAS.md) | 12 | [Docker Deployment](DOCS/12_DOCKER.md) |
 
 ---
 

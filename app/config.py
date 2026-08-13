@@ -1,10 +1,21 @@
 import os
+import tempfile
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 
 class Settings:
+    # --- LOCAL MODEL CACHE ---
+    # Where FlashRank stores its ONNX reranker. Configurable because the value
+    # differs by environment: a container bakes the model into an image path at
+    # build time (so first query doesn't pay a download), while locally the OS
+    # temp dir is correct — the previously hardcoded "/tmp/flashrank" is not a
+    # valid path on Windows and silently fell back to re-downloading every run.
+    FLASHRANK_CACHE_DIR = os.getenv(
+        "FLASHRANK_CACHE_DIR", os.path.join(tempfile.gettempdir(), "flashrank")
+    )
+
     # --- VECTOR DB (QDRANT) ---
     QDRANT_URL = os.getenv("QDRANT_CLUSTER_ENDPOINT")
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")

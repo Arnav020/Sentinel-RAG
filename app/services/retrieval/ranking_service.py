@@ -1,6 +1,9 @@
+import os
 import time
 import logfire
 from flashrank import Ranker, RerankRequest
+
+from app.config import settings
 
 # Lazy initialization - Ranker is loaded on first use to ensure logfire.configure() has run
 _ranker = None
@@ -8,16 +11,27 @@ _ranker = None
 
 def _get_ranker() -> Ranker:
     """
-    Initializes the FlashRank engine lazily. 
+    Initializes the FlashRank engine lazily.
     FlashRank uses a local ONNX model (ms-marco-MiniLM-L-6-v2) for ultra-fast reranking.
+
+    The cache directory comes from settings so a container can bake the model in
+    at build time and never download on the request path. Falls back to
+    FlashRank's own default only on a real filesystem error, and logs when it
+    does — the previous version swallowed every exception, so the "specific
+    cache directory" it advertised was in fact never used on Windows.
     """
     global _ranker
     if _ranker is None:
-        logfire.info("🧠 Initializing FlashRank Model (TinyBERT) locally...")
+        cache_dir = settings.FLASHRANK_CACHE_DIR
+        logfire.info(f"🧠 Initializing FlashRank Model (TinyBERT) from {cache_dir}...")
         try:
-            # We use a specific cache directory to avoid permission issues in production
-            _ranker = Ranker(cache_dir="/tmp/flashrank")
-        except Exception:
+            os.makedirs(cache_dir, exist_ok=True)
+            _ranker = Ranker(cache_dir=cache_dir)
+        except OSError as e:
+            logfire.warning(
+                f"FlashRank cache dir '{cache_dir}' unusable ({e}) — "
+                "falling back to the library default (may re-download the model)."
+            )
             _ranker = Ranker()
     return _ranker
 

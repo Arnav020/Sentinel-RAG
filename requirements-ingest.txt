@@ -1,0 +1,11 @@
+# ==============================================================================
+# INGESTION EXTRAS  (layered on top of requirements-prod.txt)
+#
+# Only needed to parse Office formats during ingestion. `unstructured` is large,
+# and app/ingestion/processor.py imports it lazily — solely for .docx/.pptx — so
+# it is kept out of the serving image and installed only in the ingest target.
+# ==============================================================================
+
+unstructured==0.19.6
+python-docx==1.2.0
+python-pptx==1.0.2
