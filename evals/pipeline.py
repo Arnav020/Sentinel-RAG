@@ -13,8 +13,14 @@ import os
 import requests
 import logfire
 
-API_URL = "http://localhost:8000/query"
-RESPONSE_TRUNCATE = 300
+API_URL = os.getenv("EVAL_API_URL", "http://localhost:8000/query")
+
+# The answer is graded verbatim by the RAGAS judge, so truncating it mid-sentence
+# (the previous 300-char limit did exactly that — "...will create a Redis pod and
+# ser") both invents unsupported half-claims for Faithfulness to punish and hides
+# real content from Answer Correctness. Cap generously instead: high enough that
+# realistic answers pass through whole, low enough to bound a runaway generation.
+RESPONSE_TRUNCATE = 4000
 DELAY_BETWEEN_CALLS = 10   # seconds — stays within Groq RPM on the main key
 REQUEST_TIMEOUT = 120      # seconds — guardrails + LangGraph + Groq can take >60s
 

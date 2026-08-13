@@ -128,9 +128,11 @@ sequenceDiagram
     J-->>R: Faithfulness: 0.95
 ```
 
-**Why a separate LLM for judging?** Because you should not ask the same LLM that generated the answer to evaluate its own answer — it will almost always say it did well. Using a separate judge (even a smaller, cheaper model like `llama-3.1-8b-instant`) gives you a more objective score.
+**Why a separate LLM for judging?** Because you should not ask the same LLM that generated the answer to evaluate its own answer — it will almost always say it did well.
 
-In this project: `llama-3.3-70b-versatile` generates answers, `llama-3.1-8b-instant` judges them.
+A *different size* of the same model family is not enough: same lineage, same training data, same blind spots. This project therefore judges with a **different family** — `openai/gpt-oss-120b` grading a Llama-generated system — which also draws on a separate rate-limit budget so eval runs never starve answer generation.
+
+In this project: `llama-3.3-70b-versatile` generates answers, `openai/gpt-oss-120b` judges them.
 
 ---
 
@@ -645,7 +647,7 @@ graph TD
 | We don't always have ground-truth answers | Faithfulness and Relevancy work without `reference` |
 | We use Groq (not OpenAI) | RAGAS `llm_factory` + `AsyncOpenAI(base_url=groq_url)` works cleanly |
 | We want separate metrics per failure mode | 5 independent scores, not one combined number |
-| Token cost | `llama-3.1-8b-instant` as judge keeps costs near zero |
+| Token cost | `openai/gpt-oss-120b` as judge runs on a separate free-tier budget |
 
 **DeepEval is used for Tool Correctness only** — because RAGAS doesn't have a tool testing metric, and DeepEval's Jaccard-based tool check is deterministic (zero LLM cost).
 
@@ -672,7 +674,7 @@ groq_client = AsyncOpenAI(
     api_key=GROQ_API_KEY,
     base_url="https://api.groq.com/openai/v1"
 )
-judge_llm = llm_factory("llama-3.1-8b-instant", provider="openai", client=groq_client)
+judge_llm = llm_factory("openai/gpt-oss-120b", provider="openai", client=groq_client)
 ```
 
 ### Rule 2 — Use `AsyncOpenAI`, not `Groq` or `OpenAI` (sync)
@@ -739,7 +741,9 @@ This section explains exactly how many tokens each metric costs, what Groq's lim
 | **RPM** (Requests Per Minute) | ~30 | ~30 |
 
 > These are approximate free-tier limits. Paid tiers are significantly higher.
-> We use `llama-3.1-8b-instant` as the judge — it has the highest TPM on free tier, making it the right choice for eval workloads.
+> We use `openai/gpt-oss-120b` as the judge: an independent model family (avoiding self-evaluation bias) with its own 8,000 TPM budget.
+>
+> Note: Groq token budgets are enforced **per organisation, not per key** — a second key from the same account buys no extra quota. Isolation comes from using a different *model*.
 
 **TPM** = how many tokens you can send + receive in any 60-second window.
 **TPD** = how many tokens total across the whole day before the key is locked.
@@ -958,7 +962,7 @@ This isolation means a heavy eval run can never rate-limit your production syste
 
 | Tip | Why |
 |---|---|
-| Use `llama-3.1-8b-instant` as judge, not `70b` | Both on on_demand tier share 6,000 TPM — 8b is faster so retries cost less |
+| Use `openai/gpt-oss-120b` as judge, not a Llama model | Independent family avoids self-evaluation bias, and has its own token budget |
 | Use local HuggingFace embeddings | Zero token cost for Answer Relevancy + Correctness embedding step |
 | Keep samples small (3 per experiment) | Enough to validate metric behaviour, stays well within limits |
 | Tool Correctness last — no cooldown needed | Zero LLM calls — can run immediately after Exp 5 |
@@ -1026,7 +1030,7 @@ This penalises **both** missing tools (recall failure) and extra tools (precisio
 
 ```
 ragas version      → 0.4.3
-judge LLM          → llm_factory("llama-3.1-8b-instant", provider="openai", client=AsyncOpenAI(...))
+judge LLM          → llm_factory("openai/gpt-oss-120b", provider="openai", client=AsyncOpenAI(...))
 embeddings         → HuggingFaceEmbeddings(model="sentence-transformers/all-MiniLM-L6-v2", use_api=False)
 scoring call       → await metric.abatch_score(list_of_dicts)   ← NOT evaluate()
 score extraction   → float(result.value)

@@ -1,9 +1,12 @@
 """
 Phase 2 — RAGAS + Tool Correctness metrics.
-Uses JUDGE_GROQ key so production GROQ_API_KEY is never exhausted by eval runs.
-All LLM-based metrics run in batches of 5 with 30s cooldowns between sub-batches
-and 60s cooldowns between experiments — calibrated for Groq's 6,000 TPM on_demand tier.
-Contexts are truncated to 300 chars (2 chunks max) so no single request exceeds the limit.
+
+Judged by an independent model family (see JUDGE_MODEL) against the *full*
+retrieved context the generator actually used, one sample at a time with
+cooldowns sized to the judge's TPM ceiling.
+
+Pass `result_cb(name, df)` to persist each experiment as it finishes — a full
+run takes ~1h, and without it a failure at experiment 4 discards everything.
 """
 
 
@@ -39,18 +42,39 @@ from ragas.metrics.collections import (
 )
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-JUDGE_MODEL = "llama-3.1-8b-instant"
+
+# Judge model choice matters for the credibility of these numbers:
+#   * Independent family. The system under test generates with Llama 3.3 70B, so
+#     judging with a Llama model would be self-evaluation — a model grading its
+#     own output is a bias an interviewer can fairly challenge. gpt-oss is a
+#     different lineage.
+#   * Its own rate-limit budget, so eval runs never starve answer generation.
+JUDGE_MODEL = "openai/gpt-oss-120b"
+
 COOLDOWN_STANDARD = 62
-COOLDOWN_MINI = 40       # between individual samples — lets sliding TPM window recover (~2,800 tok/sample)
+# Judge TPM is 8,000. Passing the *full* retrieved context (see below) costs
+# ~3k tokens/call and Faithfulness issues 2 calls, so budget ~6k tokens/sample:
+# 60s * 6000/8000 = 45s is the minimum safe spacing.
+COOLDOWN_MINI = 45
 GENERAL_BATCH_SIZE = 1  # one sample at a time: abatch_score fires calls concurrently per sample,
                          # so batch>1 stacks multiple samples' async calls inside the same second
-CONTEXT_TRUNCATE = 300  # chars per context chunk — reduces single request from ~7,700 to ~400 tokens
-CONTEXT_LIMIT = 2       # number of context chunks passed to RAGAS per sample
+
+# Context is NOT truncated any more, and this is the single most important fix
+# in this file. The previous 300-chars x 2-chunks limit existed to fit an
+# 8B judge's 6,000 TPM ceiling, but chunks are ~1,400 chars, so the judge only
+# ever saw each document's *header* — never the passage the answer came from.
+# Every grounding metric therefore scored near zero regardless of system quality
+# (measured: context_precision 0.000 across every sample, while independent
+# retrieval diagnostics showed the correct document ranked #1 for 15/15
+# questions). The judge must see exactly the context the generator saw, or the
+# metric is measuring the harness rather than the system.
+CONTEXT_TRUNCATE = None  # no truncation
+CONTEXT_LIMIT = 5        # matches rerank top_n in app/agents/nodes/retriever.py
 
 
 def _build_judge():
     api_key = os.getenv("JUDGE_GROQ") or os.getenv("GROQ_API_KEY")
-    client = AsyncOpenAI(api_key=api_key, base_url=GROQ_BASE_URL)
+    client = AsyncOpenAI(api_key=api_key, base_url=GROQ_BASE_URL, max_retries=5)
     llm = llm_factory(JUDGE_MODEL, provider="openai", client=client)
     embeddings = HuggingFaceEmbeddings(
         model="sentence-transformers/all-MiniLM-L6-v2",
@@ -70,11 +94,8 @@ async def _cooldown(seconds: int, label: str, status_cb=None):
         
 def _prep_samples(golden_dataset: dict) -> list:
     """
-    Returns only samples with actual_response populated.
-    Truncates contexts to CONTEXT_TRUNCATE chars and limits to CONTEXT_LIMIT chunks
-    so a single RAGAS LLM call stays well under the 6,000 TPM ceiling.
-    (Live contexts from Qdrant are ~1,500 chars each — without truncation a single
-    Faithfulness request exceeds 7,000 tokens which hard-fails on the on_demand tier.)
+    Returns only samples with actual_response populated, passing through the
+    full retrieved context the generator actually used (see CONTEXT_TRUNCATE).
     """
     valid = []
     for s in golden_dataset["rag_samples"]:
@@ -82,7 +103,9 @@ def _prep_samples(golden_dataset: dict) -> list:
         if not response:
             continue
         raw_contexts = s.get("actual_contexts") or s.get("relevant_contexts") or []
-        contexts = [c[:CONTEXT_TRUNCATE] for c in raw_contexts[:CONTEXT_LIMIT]]
+        contexts = raw_contexts[:CONTEXT_LIMIT]
+        if CONTEXT_TRUNCATE is not None:
+            contexts = [c[:CONTEXT_TRUNCATE] for c in contexts]
         valid.append({**s, "actual_contexts": contexts})
     return valid
 
@@ -108,7 +131,7 @@ async def _batched_score(metric, inputs: list, samples: list, status_cb=None, la
         all_scores.extend(scores)
     return all_scores
 
-async def run_all_metrics(golden_dataset: dict, status_cb=None) -> dict:
+async def run_all_metrics(golden_dataset: dict, status_cb=None, result_cb=None) -> dict:
     """
     Runs all 6 experiments. Returns dict keyed by metric name → DataFrame.
     status_cb(message: str) is called for live UI updates.
@@ -138,6 +161,8 @@ async def run_all_metrics(golden_dataset: dict, status_cb=None) -> dict:
             scores = await _batched_score(Faithfulness(llm=judge_llm), inputs, samples, status_cb, "Faithfulness")
             df = _score_df("faithfulness", samples, scores)
             results["faithfulness"] = df
+            if result_cb:
+                result_cb("faithfulness", df)
             logfire.info("🧪 Faithfulness done", avg=round(df["faithfulness"].mean(), 3))
 
         await _cooldown(COOLDOWN_STANDARD, "Faithfulness", status_cb)
@@ -156,6 +181,8 @@ async def run_all_metrics(golden_dataset: dict, status_cb=None) -> dict:
             )
             df = _score_df("answer_relevancy", samples, scores)
             results["answer_relevancy"] = df
+            if result_cb:
+                result_cb("answer_relevancy", df)
             logfire.info("🧪 Answer Relevancy done", avg=round(df["answer_relevancy"].mean(), 3))
 
         await _cooldown(COOLDOWN_STANDARD, "Answer Relevancy", status_cb)
@@ -175,6 +202,8 @@ async def run_all_metrics(golden_dataset: dict, status_cb=None) -> dict:
             scores = await _batched_score(ContextPrecision(llm=judge_llm), inputs, samples, status_cb, "Context Precision")
             df = _score_df("context_precision", samples, scores)
             results["context_precision"] = df
+            if result_cb:
+                result_cb("context_precision", df)
             logfire.info("🧪 Context Precision done", avg=round(df["context_precision"].mean(), 3))
 
         await _cooldown(COOLDOWN_STANDARD, "Context Precision", status_cb)
@@ -194,6 +223,8 @@ async def run_all_metrics(golden_dataset: dict, status_cb=None) -> dict:
             scores = await _batched_score(ContextRecall(llm=judge_llm), inputs, samples, status_cb, "Context Recall")
             df = _score_df("context_recall", samples, scores)
             results["context_recall"] = df
+            if result_cb:
+                result_cb("context_recall", df)
             logfire.info("🧪 Context Recall done", avg=round(df["context_recall"].mean(), 3))
 
         await _cooldown(COOLDOWN_STANDARD, "Context Recall", status_cb)
@@ -216,6 +247,8 @@ async def run_all_metrics(golden_dataset: dict, status_cb=None) -> dict:
             )
             df = _score_df("answer_correctness", samples, all_scores)
             results["answer_correctness"] = df
+            if result_cb:
+                result_cb("answer_correctness", df)
             logfire.info("🧪 Answer Correctness done", avg=round(df["answer_correctness"].mean(), 3))
 
         await _cooldown(COOLDOWN_STANDARD, "Answer Correctness", status_cb)
@@ -233,6 +266,8 @@ async def run_all_metrics(golden_dataset: dict, status_cb=None) -> dict:
                 tool_rows.append({"question": s["question"][:65], "tool_correctness": round(score, 3)})
             df = pd.DataFrame(tool_rows)
             results["tool_correctness"] = df
+            if result_cb:
+                result_cb("tool_correctness", df)
             logfire.info("🧪 Tool Correctness done", avg=round(df["tool_correctness"].mean(), 3))
 
         if status_cb:

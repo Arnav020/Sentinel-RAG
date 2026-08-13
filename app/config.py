@@ -15,6 +15,27 @@ class Settings:
     GROQ_MODEL = "llama-3.3-70b-versatile"
     GROQ_FALLBACK_API_KEY = os.getenv("GROQ_FALLBACK_API_KEY")
 
+    # --- GUARDRAILS ---
+    # Model tiering matters here: every request passes the gate, so running it on
+    # the 70B generation model burned the whole daily token budget on gate checks
+    # (and still misclassified paraphrased jailbreaks). Each model below draws on
+    # its own rate-limit budget, keeping the 70B quota for actual answers.
+    #
+    # Injection detection, stage 1 — dedicated classifier, small, fast, own budget.
+    PROMPT_GUARD_MODEL = "meta-llama/llama-prompt-guard-2-86m"
+    # Injection detection, stage 2 — adjudicates intent for stage-1 flags only.
+    # Measured on a held-out set (no overlap with the prompt's examples):
+    #   llama-3.1-8b-instant  accuracy 0.400
+    #   openai/gpt-oss-20b    accuracy 1.000  <-- chosen
+    #   openai/gpt-oss-120b   accuracy 0.933
+    # Slower (~2.8s) but only runs on flagged traffic, and on its own budget.
+    INJECTION_CONFIRM_MODEL = "openai/gpt-oss-20b"
+    # Topical scope classifier. 8B was unreliable at NeMo's few-shot intent
+    # matching but scores 16/16 on one direct scoped question — the prompting
+    # approach was the problem, not the model. Draws on its own rate-limit
+    # budget, so gate checks never compete with 70B answer generation.
+    TOPIC_FILTER_MODEL = "llama-3.1-8b-instant"
+
     # --- LLM GATEWAY (PORTKEY) ---
     PORTKEY_API_KEY = os.getenv("PORTKEY_API_KEY")
     GROQ_SLUG =  "rag1"     # primary: @rag1/llama-3.3-70b-versatile

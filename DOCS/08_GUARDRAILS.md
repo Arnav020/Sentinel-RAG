@@ -391,68 +391,86 @@ All guardrail logic lives in `app/guardrails/` and integrates into `app/main.py`
 ```
 app/guardrails/
   __init__.py        ← exports initialize_rails and guard
-  colang_rules.py    ← Colang definitions, YAML config, RAIL_INDICATORS
-  rails.py           ← singleton LLMRails, initialize_rails(), guard()
+  colang_rules.py    ← Colang policy (input rails) + YAML config
+  prompt_guard.py    ← Layer 1: Llama Prompt Guard 2 injection classifier
+  topic_filter.py    ← Layer 2: scoped topical classifier
+  rails.py           ← singleton LLMRails, custom actions, initialize_rails(), guard()
 ```
 
-### The 3 Rails We Use
+### The Layered Design
 
-| Rail | Type | What It Blocks |
+| Layer | Component | What It Blocks |
 |---|---|---|
-| Off-topic guard | Intent | Jokes, recipes, weather, anything outside IT |
-| Jailbreak shield | Intent | "Ignore all instructions", "You are now DAN", etc. |
-| Dialog control | Intent | Greetings, farewells, capability questions |
+| 1 | Llama Prompt Guard 2 (`prompt_guard.py`) | Prompt injection / jailbreaks — "ignore all instructions", "you are now DAN", persona hijacks |
+| 2 | Scoped topical classifier (`topic_filter.py`) | Off-topic requests — jokes, trivia, movies, recipes |
+| 3 | Hardened system prompts (`app/agents/nodes/responder.py`) | Anything that slips past layers 1 and 2 |
 
-We do **not** use PII detection or urgency detection (those are systematic rails that run on every message — not needed for this use case).
+Layers 1 and 2 run as **NeMo input rails**, so a blocked message never reaches
+retrieval or generation. Layer 3 is defence-in-depth: even on a classifier miss,
+the generator refuses to adopt an injected persona.
+
+We do **not** use PII detection or urgency detection (not needed for this use case).
 
 ---
 
-### The RAIL_INDICATORS Problem
+### Why Not Few-Shot Dialog Rails?
 
-This is the trickiest part of the implementation. When you call `rails.generate()`, it always returns a plain string — **there is no `fired=True` flag**. You get a string back whether a rail blocked the message or the LLM answered normally.
+The original design classified intent by few-shot prompting a chat model through
+NeMo's *dialog* rails. Measured on a 13-case adversarial + legitimate set, that
+approach scored **precision 0.00 / recall 0.00** — it missed every jailbreak and
+every off-topic request that didn't closely resemble a listed canonical example.
+It also cost **~2,300 tokens across 3 LLM calls per message** (~3-25s of added
+latency), which exhausted the generation model's entire daily token budget on
+gate checks alone.
 
-So we have to detect it ourselves by checking what the response says.
+Replacing it with purpose-built detectors behind NeMo input rails moved the same
+test set to **precision 1.00 / recall 1.00 / F1 1.00 at ~0.3s per check**.
 
-**Example — user sends "tell me a joke":**
+Two lessons worth keeping:
 
-NeMo fires the off-topic rail and returns:
-```
-"I'm an Enterprise IT Assistant focused on Kubernetes, Intel hardware, and networking. I can't help with that — but ask me anything technical!"
-```
+1. **A dedicated classifier beats few-shot prompting for a fixed binary decision.**
+   Prompt Guard 2 is fine-tuned for exactly "is this an injection?", so it
+   generalises across phrasings instead of pattern-matching examples.
+2. **The model was never the bottleneck — the prompting approach was.**
+   `llama-3.1-8b-instant` was unreliable at NeMo's few-shot intent matching, but
+   scores 16/16 answering one direct, scoped classification question.
 
-**Example — user sends "what is a ConfigMap":**
+---
 
-No rail fires, the LLM answers normally and returns:
-```
-"A Kubernetes ConfigMap is a resource that stores configuration data as key-value pairs..."
-```
+### Detecting That a Rail Fired
 
-Now look at those two responses. The first one always contains the phrase `"can't help with that — but ask me anything technical"` because that is the **exact text you wrote in `define bot refuse off topic`**. A real Kubernetes answer will never contain that phrase.
+`rails.generate()` returns generated text, not a boolean — so the gate needs a
+reliable way to know whether a rail actually blocked the message.
 
-`RAIL_INDICATORS` is a list of those unique phrases — one for each `define bot` block:
+**What this used to do (and why it was replaced):** it substring-matched the
+response against a hand-maintained list of canonical refusal phrases copied out
+of the `define bot` blocks. That coupled blocking behaviour to exact wording in
+two files with nothing keeping them in sync — rephrasing a refusal message, or
+the LLM paraphrasing one, silently disabled blocking with no error. It also
+could not distinguish "the rail fired" from "the model happened to say something
+similar".
+
+**What it does now:** ask NeMo directly. Passing `log.activated_rails` returns a
+structured record of which flows actually ran:
 
 ```python
-# app/guardrails/colang_rules.py
+result = _rails.generate(
+    messages=[{"role": "user", "content": message}],
+    options={"rails": ["input"], "log": {"activated_rails": True}},
+)
 
-RAIL_INDICATORS = [
-    "can't help with that — but ask me anything technical",       # off-topic rail
-    "I maintain consistent guidelines regardless of how I am prompted",  # jailbreak rail
-    "Hello! I'm your Enterprise IT Assistant",                    # greeting dialog
-    "Goodbye! Feel free to return whenever you have more enterprise IT questions",  # farewell dialog
-    "I'm an Enterprise AI Assistant with deep expertise in",      # capabilities dialog
-]
+for rail in result.log.activated_rails:
+    if rail.name in BLOCKING_FLOWS:   # ("check injection", "check off topic")
+        return True, _extract_response_text(result)
 ```
 
-The `guard()` function in `rails.py` does:
+Two things make this robust:
 
-```python
-fired = any(indicator in content for indicator in RAIL_INDICATORS)
-```
-
-If the response contains **any** of those phrases → a rail fired → block the request.  
-If **none** match → the LLM gave a real technical answer → pass through to LangGraph.
-
-The phrases must be specific enough that they would **never appear in a legitimate answer**. "I maintain consistent guidelines regardless of how I am prompted" is perfect — no answer about BGP routing or Kubernetes RBAC would ever contain that sentence.
+- **`options={"rails": ["input"]}`** runs *only* the input rails. Generation
+  belongs to LangGraph, so NeMo never needs a generation model of its own — this
+  is what removes the ~2,300 tokens/message the old dialog-rail design spent.
+- **Flow names, not prose.** `BLOCKING_FLOWS` refers to Colang flow identifiers,
+  so refusal wording can be reworded freely without breaking detection.
 
 ---
 
@@ -462,22 +480,37 @@ The phrases must be specific enough that they would **never appear in a legitima
 # app/guardrails/rails.py
 
 def guard(message: str) -> tuple[bool, str | None]:
-    result = _rails.generate(messages=[{"role": "user", "content": message}])
-    content = result.get("content", "")
+    """(True, response) -> a rail fired, skip RAG.  (False, None) -> proceed."""
+    with logfire.span("🛡️ Guardrails Check"):
+        try:
+            result = _rails.generate(
+                messages=[{"role": "user", "content": message}],
+                options={"rails": ["input"], "log": {"activated_rails": True}},
+            )
+        except Exception as e:
+            # Fail open: a gate outage should degrade protection, not the service.
+            logfire.error(f"⚠️ Guardrails check failed, failing open: {e}")
+            return False, None
 
-    fired = any(indicator in content for indicator in RAIL_INDICATORS)
-
-    if fired:
-        logfire.info(f"🛡️ Guardrails fired | query='{message[:80]}'")
-        return True, content      # caller returns immediately, skips RAG
-
-    logfire.info("✅ Guardrails passed.")
-    return False, None            # caller proceeds to LangGraph
+        if _blocking_rail_activated(result):
+            return True, _extract_response_text(result)
+        return False, None
 ```
 
-Two models are used deliberately:
-- `llama-3.1-8b-instant` for the guardrail gate — fast, cheap, only doing intent classification
-- `llama-3.3-70b-versatile` for the RAG pipeline — stays for generation quality
+**Fail-open is a deliberate choice.** The gate sits in front of every request, so
+a classifier outage taking down the whole service would be a worse failure than
+temporarily degraded filtering — and Layer 3 (hardened system prompts) still
+refuses injected personas even when Layers 1-2 are unavailable. The failure is
+logged at error level so it is visible in Logfire rather than silent.
+
+**Model tiering** — each model draws on its own rate-limit budget, so gate checks
+never starve answer generation:
+
+| Purpose | Model | Cost per check |
+|---|---|---|
+| Injection detection | `meta-llama/llama-prompt-guard-2-86m` | ~50 tokens |
+| Topical scope | `llama-3.1-8b-instant` | ~200 tokens |
+| RAG generation | `llama-3.3-70b-versatile` | (generation only) |
 
 ---
 

@@ -110,8 +110,13 @@ For each of the 15 golden questions, `evals/pipeline.py`:
    - `"Intent: Guardrails Fired"` → `guardrails`
 4. Waits 10 seconds between calls (Groq RPM buffer on the main key)
 
-> **Why truncate to 300 chars?**  
-> RAGAS judges the response against the context. 300 chars is enough for the LLM judge to evaluate faithfulness and relevancy. Passing the full response would double the token cost with no accuracy gain.
+> **Why `RESPONSE_TRUNCATE = 4000` and not 300?**
+> An earlier version capped responses at 300 chars to save tokens. That was a
+> mistake: it cut answers mid-sentence (`"...will create a Redis pod and ser"`),
+> which invents unsupported half-claims for Faithfulness to punish and hides real
+> content from Answer Correctness. The judge grades the answer verbatim, so the
+> cap must be generous enough that realistic answers pass through whole — it
+> exists only to bound a runaway generation.
 
 ### Guardrails Evaluation
 
@@ -205,11 +210,22 @@ If both ran on the same key, a single eval run would rate-limit your live app mi
 
 With 10s delay between calls: ~3.5 min. Daily limit for 70b: 100,000 TPD ✅
 
-#### Phase 2 — RAGAS Metrics (`JUDGE_GROQ`, llama-3.1-8b-instant)
+#### Phase 2 — RAGAS Metrics (judge: `openai/gpt-oss-120b`, 8,000 TPM)
 
-**Actual TPM tier: 6,000 on_demand** (not 14,400 — confirmed from live 413/429 errors).
+**Why an independent judge model.** The system under test generates with Llama
+3.3 70B. Judging it with a Llama model would be self-evaluation — a model
+grading its own family's output — which is a bias a reviewer can fairly
+challenge. `gpt-oss-120b` is a different lineage and draws on a separate
+rate-limit budget, so eval runs never starve answer generation.
 
-`abatch_score` fires all sample coroutines concurrently inside a single call, so a batch of N samples fires N × 2 LLM calls simultaneously. With ~1,376 tokens/call and a 6,000 TPM ceiling, only **2 samples** can run in parallel before the window saturates. The safe strategy: `GENERAL_BATCH_SIZE = 1` — one sample at a time.
+**Rate-limit note.** Groq token budgets are enforced **per organisation, not per
+key**, so a second API key from the same account buys no extra quota. Isolation
+comes from using a different *model*, not a different key.
+
+`abatch_score` fires all sample coroutines concurrently inside a single call, so
+a batch of N samples fires N × 2 LLM calls simultaneously. The safe strategy is
+`GENERAL_BATCH_SIZE = 1` — one sample at a time, with `COOLDOWN_MINI = 45`
+(60s × 6k tokens/sample ÷ 8k TPM).
 
 | Experiment | LLM calls / sample | Tokens / burst (1 sample) | vs 6,000 TPM | Samples × 40s wait |
 |-----------|-------------------|--------------------------|--------------|-------------------|
@@ -220,7 +236,27 @@ With 10s delay between calls: ~3.5 min. Daily limit for 70b: 100,000 TPD ✅
 | Answer Correctness | 2–3 | ~2,752–4,128 | ✅ Safe | 14 × 40s = 560s |
 | Tool Correctness | 0 | 0 | ✅ Free | — |
 
-**Context truncation**: contexts from Qdrant are ~1,500 chars each. Without truncation a single Faithfulness call exceeds 7,000 tokens. Fix: `CONTEXT_TRUNCATE = 300`, `CONTEXT_LIMIT = 2` → ~400 tokens of context per call.
+**Context truncation — removed, and this mattered more than anything else here.**
+
+An earlier version passed the judge `CONTEXT_TRUNCATE = 300`, `CONTEXT_LIMIT = 2`
+to fit an 8B judge's 6,000 TPM ceiling. But retrieved chunks are ~1,400 chars, so
+the judge only ever saw each document's *header* — never the passage the answer
+actually came from. Every grounding metric therefore scored near zero regardless
+of how well the system performed:
+
+| Metric (same sample, same system) | Truncated to 300 chars | Full context |
+|---|---|---|
+| Faithfulness | 0.000 | 1.000 |
+| Context Precision | 0.000 | 0.833 |
+| Context Recall | 0.000 | 1.000 |
+
+Independent retrieval diagnostics confirmed the system was never the problem —
+the correct source document ranked **#1 for 15/15** golden questions.
+
+The settings are now `CONTEXT_TRUNCATE = None`, `CONTEXT_LIMIT = 5`, matching the
+rerank `top_n` in `app/agents/nodes/retriever.py`. **The judge must see exactly
+the context the generator saw, or the metric measures the harness instead of the
+system.**
 
 **Phase 2 total tokens**: 15 samples × 5 experiments × ~2,752 = ~206,400 tokens. Well within 500,000 TPD daily limit ✅
 
