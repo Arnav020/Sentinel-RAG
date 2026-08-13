@@ -7,10 +7,8 @@ authors = [
     { name = "Arnav Joshi", email = "arnavjoshi020@gmail.com" }
 ]
 requires-python = ">=3.12"
+# Dependencies are managed in requirements.txt / requirements-prod.txt, not here.
 dependencies = []
-
-[project.scripts]
-agentic-rag = "agentic_rag:main"
 
 [build-system]
 requires = ["uv_build>=0.12.3,<0.13.0"]
