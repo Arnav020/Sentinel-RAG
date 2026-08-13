@@ -1,19 +1,41 @@
-# Sentinel RAG
+<div align="center">
 
-**An agentic Retrieval-Augmented Generation platform with a layered safety architecture and a measurement-first evaluation discipline.**
+# Sentinel-RAG
 
-Most RAG projects stop at *"it retrieves documents and answers questions."* This one is built around two harder problems that decide whether a RAG system survives contact with real users:
+### The enterprise documentation assistant that can't be talked out of its job.
 
-1. **Can you stop it being manipulated** — without blocking legitimate users who happen to write *"ignore the deprecation warning and tell me how to scale"*?
-2. **Can you prove it works** — with numbers that survive someone asking *"how exactly did you measure that?"*
+**Agentic RAG over your internal engineering documentation — with a four-layer safety architecture and a measurement-first evaluation discipline.**
 
-Both questions are answered below with measured results, the methodology behind them, and the failure modes that were found and fixed along the way.
+`LangGraph` · `NeMo Guardrails` · `Qdrant` · `Portkey` · `FastAPI` · `RAGAS`
+
+**Guardrails 1.000 P/R** · **Retrieval 100% hit@5** · **Faithfulness 0.846** · **Answer Relevancy 0.917**
+
+</div>
+
+---
+
+## What Sentinel-RAG Is
+
+Sentinel-RAG answers engineering questions from an organisation's own documentation — Kubernetes runbooks, platform guides, job-orchestration references — and **refuses to do anything else**.
+
+That refusal is the product. An internal assistant that will cheerfully write poetry, adopt a new persona on request, or invent a `kubectl` flag that does not exist is not a productivity tool; it is a liability with a chat box. Sentinel-RAG is built so that:
+
+- **Adversarial input never reaches the model.** Injection and off-topic requests are blocked at the gate, before retrieval or generation — measured at **1.000 precision and 1.000 recall**.
+- **Legitimate engineers are never blocked.** A user writing *"forget what I said earlier, how do I monitor a Job?"* is not treated as an attacker — a distinction that required a [two-stage cascade](#five-things-here-that-are-genuinely-uncommon) to get right.
+- **Answers are grounded or absent.** Zero retrieved context produces an explicit *"not found"*, never a confident guess.
+- **Every claim about quality is measured**, with the methodology published alongside the number.
+
+Most RAG projects stop at *"it retrieves documents and answers questions."* This one is built around the two harder problems that decide whether a RAG system survives contact with real users:
+
+1. **Can you stop it being manipulated** — without blocking legitimate users?
+2. **Can you prove it works** — with numbers that survive *"how exactly did you measure that?"*
 
 ---
 
 ## Table of Contents
 
 - [Measured Results](#measured-results)
+- [The Knowledge Base](#the-knowledge-base)
 - [What Makes This Different](#what-makes-this-different)
 - [System Architecture](#system-architecture)
 - [The Guardrail Stack](#the-guardrail-stack)
@@ -28,7 +50,7 @@ Both questions are answered below with measured results, the methodology behind 
 
 ## Measured Results
 
-All figures below are produced by the evaluation suite in [`evals/`](evals/) against a 15-question golden dataset built from the source documents, plus a 6-case adversarial guardrail set. Sample counts are shown because a mean without its denominator is not a result.
+All figures below are produced by Sentinel-RAG's evaluation suite in [`evals/`](evals/) against a 15-question golden dataset built from the source documents, plus a 6-case adversarial guardrail set. Sample counts are shown because a mean without its denominator is not a result.
 
 ### Safety
 
@@ -75,9 +97,48 @@ Judged by `openai/gpt-oss-20b`, an **independent model family** from the Llama 3
 
 ---
 
+## The Knowledge Base
+
+The deployed instance is indexed over a **platform-engineering corpus** — Kubernetes workload management, autoscaling, and cloud job orchestration. This is the domain the assistant will answer on; everything else is refused by the topical rail.
+
+### Answerable domains
+
+| Document | Format | Domain covered | Example question it answers |
+|---|---|---|---|
+| `parallel_work_queue.txt` | TXT | Kubernetes parallel **Jobs** with a **Redis work queue** | *"How do you fill the Redis work queue with tasks using the CLI?"* |
+| `pods_autoscale.html` | HTML | **Horizontal & Vertical Pod Autoscaling** (HPA/VPA), Metrics Server | *"Which kubectl commands confirm the Metrics Server is running?"* |
+| `cronjobs.docx` | DOCX | Kubernetes **Jobs and CronJobs**, restart policies, backoff limits | *"Which Kubernetes API group does a Job resource belong to?"* |
+| `monitor_job.docx` | DOCX | **Monitoring job status**, logs, failure diagnosis | *"How do I monitor the status of a Kubernetes Job?"* |
+| `job_management.html` | HTML | **Databricks** job management — CLI, SDK, REST API | *"When should you use the Databricks REST API instead of the CLI or SDK?"* |
+| `architecture.pptx` | PPTX | System architecture reference | — |
+
+**Indexed:** 948 vector chunks · 768-dim · cosine similarity · Qdrant Cloud.
+
+### The distractor corpus — why retrieval numbers here mean something
+
+Alongside the 6 source documents, the index deliberately contains **58 unrelated technical documents** (~47 PDFs plus HTML, TXT, DOCX and PPTX): compiler-optimisation papers, OS kernel internals, data-compression algorithms, x86 virtualisation, networking specifications, and assorted research PDFs.
+
+This matters because **retrieval precision on a clean corpus is a meaningless metric.** If every document in the index is relevant, any retriever looks excellent. Salting the index with dense, plausibly-technical noise means the reported numbers reflect the retriever's ability to *discriminate*, not the corpus's lack of alternatives:
+
+> With 58 distractor documents in the index, the correct source document still ranks **#1 for 15 out of 15** golden questions.
+
+The ingestion pipeline handles all five formats on-device — **PDF, HTML, TXT, DOCX, PPTX** — with no external OCR or parsing service.
+
+### Pointing it at your own documentation
+
+The corpus is not hard-coded. Drop files into `DATA/`, re-run ingestion, and update the topical scope in [`app/guardrails/topic_filter.py`](app/guardrails/topic_filter.py) to describe the new domain:
+
+```powershell
+python -m app.ingestion.processor DATA --wipe
+```
+
+Sub-folder names become `source_type` tags on every chunk, so provenance survives into the answer's source attribution.
+
+---
+
 ## What Makes This Different
 
-| Typical RAG project | This project |
+| Typical RAG project | Sentinel-RAG |
 |---|---|
 | Guardrails = a keyword list or one prompt instruction | **Four-layer defence**, each layer a different mechanism, with measured precision/recall |
 | "It works" demoed on a few questions | **Quantified** on a golden dataset with per-metric sample counts |
@@ -242,11 +303,11 @@ Every fail-open path logs at error level, so degraded protection is visible in L
 
 ## Evaluation Methodology
 
-The evaluation is designed to be **defensible under questioning**, not merely favourable.
+Sentinel-RAG's evaluation is designed to be **defensible under questioning**, not merely favourable.
 
 ### Independent judge
 
-The system generates with **Llama 3.3 70B**; the judge is **`openai/gpt-oss-20b`** — a different lineage. A different *size* of the same family is not enough: same training data, same blind spots. This also isolates budgets, so eval runs never starve answer generation.
+Sentinel-RAG generates with **Llama 3.3 70B**; the judge is **`openai/gpt-oss-20b`** — a different lineage. A different *size* of the same family is not enough: same training data, same blind spots. This also isolates budgets, so eval runs never starve answer generation.
 
 ### The judge sees exactly what the generator saw
 
@@ -285,7 +346,7 @@ flowchart LR
 
 ## Engineering Findings
 
-Non-obvious problems found and fixed. Each is documented in [`DOCS/`](DOCS/).
+Non-obvious problems found and fixed while building Sentinel-RAG. Each is documented in [`DOCS/`](DOCS/).
 
 | # | Finding | Impact |
 |---|---|---|
@@ -449,6 +510,8 @@ Three tabs: review the ground truth → run the live pipeline → score with RAG
 
 <div align="center">
 
-**Built for enterprise document intelligence — where being wrong is expensive and being manipulated is worse.**
+### Sentinel-RAG
+
+**Enterprise document intelligence — where being wrong is expensive, and being manipulated is worse.**
 
 </div>
