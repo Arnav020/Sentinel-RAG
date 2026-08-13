@@ -46,10 +46,19 @@ GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 # Judge model choice matters for the credibility of these numbers:
 #   * Independent family. The system under test generates with Llama 3.3 70B, so
 #     judging with a Llama model would be self-evaluation — a model grading its
-#     own output is a bias an interviewer can fairly challenge. gpt-oss is a
+#     own output is a bias a reviewer can fairly challenge. gpt-oss is a
 #     different lineage.
 #   * Its own rate-limit budget, so eval runs never starve answer generation.
-JUDGE_MODEL = "openai/gpt-oss-120b"
+#
+# 20b rather than 120b: same lineage and same independence argument, but a
+# separate daily token budget (120b's 200k TPD is easily exhausted by a few full
+# passes). Verified equivalent before switching — on the same worst-case samples
+# both judges returned identical Faithfulness scores (1.0 and 0.889), so this is
+# a quota decision, not a change in how strictly the system is graded.
+#
+# All metrics must be scored by the SAME judge: mixing judges across metrics
+# would make the numbers incomparable.
+JUDGE_MODEL = "openai/gpt-oss-20b"
 
 COOLDOWN_STANDARD = 62
 # Judge TPM is 8,000. Passing the *full* retrieved context (see below) costs
@@ -76,9 +85,17 @@ CONTEXT_LIMIT = 5        # matches rerank top_n in app/agents/nodes/retriever.py
 # full-length answers, Faithfulness enumerates many statements, so the JSON reply
 # is long — under the default output cap it gets cut mid-object and Groq rejects
 # it (`IncompleteOutputException` / `json_validate_failed`, measured 0/4 success).
-# Raising the cap fixed it outright (4/4). `reasoning_effort=low` keeps the
-# reasoning preamble from eating that budget.
-JUDGE_MAX_TOKENS = 16000
+#
+# But max_tokens cannot simply be maximised: Groq sizes a request as
+# prompt + max_tokens and rejects it outright above the model's TPM ceiling
+# (max_tokens=16000 produced `413 ... Requested 16959, Limit 8000`). So this is a
+# budget split, not a free knob:
+#     worst-case prompt (5 full contexts + longest answer) ~2,122 tokens
+#     2,122 + 4,000 = 6,122  <  8,000 ceiling
+# Verified on the three largest samples: 3000/4000/5000 all score identically and
+# without truncation, so 4000 keeps output headroom while staying well clear of
+# the ceiling. `reasoning_effort=low` stops the reasoning preamble eating it.
+JUDGE_MAX_TOKENS = 4000
 JUDGE_REASONING_EFFORT = "low"
 
 
@@ -163,146 +180,120 @@ async def _batched_score(metric, inputs: list, samples: list, status_cb=None, la
         all_scores.extend(scores)
     return all_scores
 
-async def run_all_metrics(golden_dataset: dict, status_cb=None, result_cb=None) -> dict:
+# Each LLM-scored experiment: (key, human label, metric factory, input builder).
+# Declarative so a resumed run can skip finished metrics without duplicating the
+# scoring/cooldown/persistence logic five times.
+_EXPERIMENTS = [
+    (
+        "faithfulness", "Faithfulness",
+        lambda llm, emb: Faithfulness(llm=llm),
+        lambda s: {"user_input": s["question"], "response": s["actual_response"],
+                   "retrieved_contexts": s["actual_contexts"]},
+    ),
+    (
+        "answer_relevancy", "Answer Relevancy",
+        lambda llm, emb: AnswerRelevancy(llm=llm, embeddings=emb),
+        lambda s: {"user_input": s["question"], "response": s["actual_response"]},
+    ),
+    (
+        "context_precision", "Context Precision",
+        lambda llm, emb: ContextPrecision(llm=llm),
+        lambda s: {"user_input": s["question"], "reference": s["reference"],
+                   "retrieved_contexts": s["actual_contexts"]},
+    ),
+    (
+        "context_recall", "Context Recall",
+        lambda llm, emb: ContextRecall(llm=llm),
+        lambda s: {"user_input": s["question"], "reference": s["reference"],
+                   "retrieved_contexts": s["actual_contexts"]},
+    ),
+    (
+        "answer_correctness", "Answer Correctness",
+        lambda llm, emb: AnswerCorrectness(llm=llm, embeddings=emb),
+        lambda s: {"user_input": s["question"], "response": s["actual_response"],
+                   "reference": s["reference"]},
+    ),
+]
+
+
+def _tool_correctness_df(samples: list) -> pd.DataFrame:
+    """Jaccard overlap of tools called vs expected. No LLM, so it always runs."""
+    rows = []
+    for s in samples:
+        called = set(s.get("actual_tools_called") or [])
+        expected = set(s.get("expected_tools") or [])
+        union = len(called | expected)
+        score = len(called & expected) / union if union > 0 else 0.0
+        rows.append({"question": s["question"][:65], "tool_correctness": round(score, 3)})
+    return pd.DataFrame(rows)
+
+
+async def run_all_metrics(golden_dataset: dict, status_cb=None, result_cb=None,
+                          skip_metrics=None) -> dict:
     """
-    Runs all 6 experiments. Returns dict keyed by metric name → DataFrame.
-    status_cb(message: str) is called for live UI updates.
+    Score the enriched dataset. Returns {metric_name: DataFrame}.
+
+    status_cb(message)      - live progress updates
+    result_cb(name, df)     - called as each experiment finishes, so results are
+                              persisted incrementally rather than only at the end
+    skip_metrics            - metric keys to skip because they are already scored
+
+    `skip_metrics` matters for more than convenience: one full pass costs roughly
+    240k judge tokens while the free-tier daily cap is 200k, so a complete run
+    cannot fit in a single day from scratch. Resuming with the finished metrics
+    skipped is what makes the suite completable.
     """
     judge_llm, ragas_embeddings = _build_judge()
     samples = _prep_samples(golden_dataset)
-
     if not samples:
         raise ValueError("No samples with actual_response found. Run Phase 1 first.")
 
+    skip = set(skip_metrics or ())
     results = {}
+    total = len(_EXPERIMENTS) + 1  # + tool correctness
 
     with logfire.span("🧪 Eval Phase 2 — All Metrics", total_samples=len(samples)):
+        ran_any = False
+        for idx, (key, label, make_metric, build_input) in enumerate(_EXPERIMENTS, start=1):
+            if key in skip:
+                if status_cb:
+                    status_cb(f"⏭️  Exp {idx}/{total} — {label}: already scored, skipping.")
+                continue
 
-        # ── Exp 1: Faithfulness ───────────────────────────────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 1/6 — Faithfulness ({len(samples)} samples)...")
-        with logfire.span("🧪 Exp 1 — Faithfulness"):
-            inputs = [
-                {
-                    "user_input": s["question"],
-                    "response": s["actual_response"],
-                    "retrieved_contexts": s["actual_contexts"],
-                }
-                for s in samples
-            ]
-            scores = await _batched_score(Faithfulness(llm=judge_llm), inputs, samples, status_cb, "Faithfulness")
-            df = _score_df("faithfulness", samples, scores)
-            results["faithfulness"] = df
-            if result_cb:
-                result_cb("faithfulness", df)
-            logfire.info("🧪 Faithfulness done", avg=round(df["faithfulness"].mean(), 3))
+            if ran_any:
+                # Only cool down between experiments we actually ran.
+                await _cooldown(COOLDOWN_STANDARD, "previous experiment", status_cb)
+            ran_any = True
 
-        await _cooldown(COOLDOWN_STANDARD, "Faithfulness", status_cb)
+            if status_cb:
+                status_cb(f"🧪 Exp {idx}/{total} — {label} ({len(samples)} samples)...")
+            with logfire.span(f"🧪 Exp {idx} — {label}"):
+                inputs = [build_input(s) for s in samples]
+                scores = await _batched_score(
+                    make_metric(judge_llm, ragas_embeddings), inputs, samples, status_cb, label
+                )
+                df = _score_df(key, samples, scores)
+                results[key] = df
+                if result_cb:
+                    result_cb(key, df)
+                logfire.info(f"🧪 {label} done", avg=round(df[key].mean(), 3),
+                             scored=len(df), total=len(samples))
 
-        # ── Exp 2: Answer Relevancy ───────────────────────────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 2/6 — Answer Relevancy ({len(samples)} samples)...")
-        with logfire.span("🧪 Exp 2 — Answer Relevancy"):
-            inputs = [
-                {"user_input": s["question"], "response": s["actual_response"]}
-                for s in samples
-            ]
-            scores = await _batched_score(
-                AnswerRelevancy(llm=judge_llm, embeddings=ragas_embeddings),
-                inputs, samples, status_cb, "Answer Relevancy"
-            )
-            df = _score_df("answer_relevancy", samples, scores)
-            results["answer_relevancy"] = df
-            if result_cb:
-                result_cb("answer_relevancy", df)
-            logfire.info("🧪 Answer Relevancy done", avg=round(df["answer_relevancy"].mean(), 3))
-
-        await _cooldown(COOLDOWN_STANDARD, "Answer Relevancy", status_cb)
-
-        # ── Exp 3: Context Precision ──────────────────────────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 3/6 — Context Precision ({len(samples)} samples)...")
-        with logfire.span("🧪 Exp 3 — Context Precision"):
-            inputs = [
-                {
-                    "user_input": s["question"],
-                    "reference": s["reference"],
-                    "retrieved_contexts": s["actual_contexts"],
-                }
-                for s in samples
-            ]
-            scores = await _batched_score(ContextPrecision(llm=judge_llm), inputs, samples, status_cb, "Context Precision")
-            df = _score_df("context_precision", samples, scores)
-            results["context_precision"] = df
-            if result_cb:
-                result_cb("context_precision", df)
-            logfire.info("🧪 Context Precision done", avg=round(df["context_precision"].mean(), 3))
-
-        await _cooldown(COOLDOWN_STANDARD, "Context Precision", status_cb)
-
-        # ── Exp 4: Context Recall ─────────────────────────────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 4/6 — Context Recall ({len(samples)} samples)...")
-        with logfire.span("🧪 Exp 4 — Context Recall"):
-            inputs = [
-                {
-                    "user_input": s["question"],
-                    "reference": s["reference"],
-                    "retrieved_contexts": s["actual_contexts"],
-                }
-                for s in samples
-            ]
-            scores = await _batched_score(ContextRecall(llm=judge_llm), inputs, samples, status_cb, "Context Recall")
-            df = _score_df("context_recall", samples, scores)
-            results["context_recall"] = df
-            if result_cb:
-                result_cb("context_recall", df)
-            logfire.info("🧪 Context Recall done", avg=round(df["context_recall"].mean(), 3))
-
-        await _cooldown(COOLDOWN_STANDARD, "Context Recall", status_cb)
-
-        # ── Exp 5: Answer Correctness (split into batches) ────────────────────
-        if status_cb:
-            status_cb(f"🧪 Exp 5/6 — Answer Correctness batch 1/2...")
-        with logfire.span("🧪 Exp 5 — Answer Correctness"):
-            inputs = [
-                {
-                    "user_input": s["question"],
-                    "response": s["actual_response"],
-                    "reference": s["reference"],
-                }
-                for s in samples
-            ]
-            all_scores = await _batched_score(
-                AnswerCorrectness(llm=judge_llm, embeddings=ragas_embeddings),
-                inputs, samples, status_cb, "Answer Correctness"
-            )
-            df = _score_df("answer_correctness", samples, all_scores)
-            results["answer_correctness"] = df
-            if result_cb:
-                result_cb("answer_correctness", df)
-            logfire.info("🧪 Answer Correctness done", avg=round(df["answer_correctness"].mean(), 3))
-
-        await _cooldown(COOLDOWN_STANDARD, "Answer Correctness", status_cb)
-
-        # ── Exp 6: Tool Correctness (no LLM — Jaccard) ───────────────────────
-        if status_cb:
-            status_cb("⚡ Exp 6/6 — Tool Correctness (zero LLM calls)...")
-        with logfire.span("🧪 Exp 6 — Tool Correctness"):
-            tool_rows = []
-            for s in samples:
-                called = set(s.get("actual_tools_called") or [])
-                expected = set(s.get("expected_tools") or [])
-                union = len(called | expected)
-                score = len(called & expected) / union if union > 0 else 0.0
-                tool_rows.append({"question": s["question"][:65], "tool_correctness": round(score, 3)})
-            df = pd.DataFrame(tool_rows)
-            results["tool_correctness"] = df
-            if result_cb:
-                result_cb("tool_correctness", df)
-            logfire.info("🧪 Tool Correctness done", avg=round(df["tool_correctness"].mean(), 3))
+        # ── Tool Correctness (no LLM — Jaccard) ──────────────────────────────
+        if "tool_correctness" in skip:
+            if status_cb:
+                status_cb(f"⏭️  Exp {total}/{total} — Tool Correctness: already scored, skipping.")
+        else:
+            if status_cb:
+                status_cb(f"⚡ Exp {total}/{total} — Tool Correctness (zero LLM calls)...")
+            with logfire.span(f"🧪 Exp {total} — Tool Correctness"):
+                df = _tool_correctness_df(samples)
+                results["tool_correctness"] = df
+                if result_cb:
+                    result_cb("tool_correctness", df)
+                logfire.info("🧪 Tool Correctness done", avg=round(df["tool_correctness"].mean(), 3))
 
         if status_cb:
-            status_cb("✅ All 6 experiments complete!")
+            status_cb(f"✅ Scoring complete ({len(results)} metric(s) produced this run).")
 
     return results
