@@ -157,28 +157,6 @@ Every request passes the gate, so running it on the 70B model consumed the entir
 
 Whether a guardrail fired is read from NeMo's structured `activated_rails` log, keyed on **flow identifiers**. The previous implementation substring-matched responses against hand-copied refusal phrases — so rewording a refusal, or the model paraphrasing one, silently disabled blocking with no error.
 
-### 6. The UI was removed as a dependency, not rewritten as one
-
-The original interface was Streamlit. It worked, but it made the UI a **second process with its own Python dependency tree**, reachable only through a `BACKEND_URL` that had to differ between host and container — inside a container `localhost` is the container, and that single misconfiguration was the most common way the stack came up broken.
-
-The replacement is **three files — `index.html`, `styles.css`, `app.js` — with no framework, no bundler, no `node_modules`, and no external network requests.** FastAPI serves them; the client calls `/query` on its own origin. There is no `BACKEND_URL`, no CORS policy, no UI container, and nothing to keep in version sync.
-
-What that bought, concretely:
-
-| | Streamlit UI | Current client |
-|---|---|---|
-| Processes to run | 2 | **1** |
-| Cross-origin config | `BACKEND_URL`, per environment | **none — same origin** |
-| Build toolchain | Python + Streamlit runtime | **none** |
-| Shipping cost in the image | a dependency tree | **~46 KB of static files** |
-
-It is not a downgrade in behaviour. The client renders the markdown subset the model actually emits (headings, lists, emphasis, links, fenced code with copy buttons), attaches collapsible **Reasoning** and **Sources** disclosures to every answer — each source split back into its filename and passage, so attribution is visible without leaving the thread — keeps a light/dark theme with the OS as default, is responsive down to mobile, honours `prefers-reduced-motion`, and polls `/health` every 30 s.
-
-Two details worth calling out:
-
-- **Every model output is HTML-escaped before the markdown renderer runs**, so the only tags in the DOM are ones this codebase authored. Link hrefs are allowlisted to `http(s):` and `mailto:` — `javascript:` and `data:` URLs are dropped. An LLM's output is untrusted input; treating it as such is the whole point of a hand-written renderer.
-- **A blocked request renders as a deliberate notice, not an error.** A refusal is the product working. Showing it in a red failure state teaches users the system is broken when it is doing exactly its job.
-
 ---
 
 ## Architecture
