@@ -6,9 +6,15 @@
 
 **Agentic RAG over internal engineering documentation — with a four-layer safety architecture and a measurement-first evaluation discipline.**
 
-`LangGraph` · `NeMo Guardrails` · `Qdrant` · `Portkey` · `FastAPI` · `RAGAS`
+`LangGraph` · `NeMo Guardrails` · `Qdrant` · `Portkey` · `FastAPI` · `Docker` · `RAGAS`
 
 **Guardrails 1.000 P/R** · **Retrieval 100% hit@5** · **Faithfulness 0.846** · **Answer Relevancy 0.917**
+
+<br />
+
+<img src="public/landing_page.png" alt="Sentinel-RAG web client — sidebar showing connection status and indexed knowledge-base topics, with suggested starting questions" width="100%" />
+
+<sub>The client is three static files served by the same FastAPI process — no framework, no build step, no second container.</sub>
 
 </div>
 
@@ -25,7 +31,7 @@ That refusal is the product. An assistant that will adopt a new persona on reque
 - **Answers are grounded or absent** — zero retrieved context yields an explicit *"not found"*, never a confident guess.
 - **Every quality claim is measured**, with the methodology published beside the number.
 
-**Contents:** [Results](#measured-results) · [Knowledge Base](#the-knowledge-base) · [Why It's Different](#why-its-different) · [Architecture](#architecture) · [Guardrails](#the-guardrail-stack) · [Evaluation](#evaluation-methodology) · [Findings](#engineering-findings) · [Setup](#getting-started)
+**Contents:** [Results](#measured-results) · [Knowledge Base](#the-knowledge-base) · [Why It's Different](#why-its-different) · [Architecture](#architecture) · [Guardrails](#the-guardrail-stack) · [Evaluation](#evaluation-methodology) · [Findings](#engineering-findings) · [Packaging](#packaging) · [Setup](#getting-started)
 
 ---
 
@@ -89,7 +95,7 @@ Indexed over a **platform-engineering corpus**. This is the domain the assistant
 
 ### Why the distractor corpus matters
 
-The index also holds **58 unrelated technical documents** (~47 PDFs: compiler optimisation, OS kernels, data compression, x86 virtualisation, networking specs).
+The index also holds **58 unrelated technical documents** (47 PDFs plus HTML/TXT/DOCX/PPTX: compiler optimisation, OS kernels, data compression, x86 virtualisation, networking specs). The repo ships a 10-document sample of these; the full set is generated noise, kept out of version control.
 
 This is deliberate. **Retrieval precision on a clean corpus is meaningless** — if every document is relevant, any retriever looks excellent. Dense, plausibly-technical noise means the numbers reflect the retriever's ability to *discriminate*:
 
@@ -151,14 +157,36 @@ Every request passes the gate, so running it on the 70B model consumed the entir
 
 Whether a guardrail fired is read from NeMo's structured `activated_rails` log, keyed on **flow identifiers**. The previous implementation substring-matched responses against hand-copied refusal phrases — so rewording a refusal, or the model paraphrasing one, silently disabled blocking with no error.
 
+### 6. The UI was removed as a dependency, not rewritten as one
+
+The original interface was Streamlit. It worked, but it made the UI a **second process with its own Python dependency tree**, reachable only through a `BACKEND_URL` that had to differ between host and container — inside a container `localhost` is the container, and that single misconfiguration was the most common way the stack came up broken.
+
+The replacement is **three files — `index.html`, `styles.css`, `app.js` — with no framework, no bundler, no `node_modules`, and no external network requests.** FastAPI serves them; the client calls `/query` on its own origin. There is no `BACKEND_URL`, no CORS policy, no UI container, and nothing to keep in version sync.
+
+What that bought, concretely:
+
+| | Streamlit UI | Current client |
+|---|---|---|
+| Processes to run | 2 | **1** |
+| Cross-origin config | `BACKEND_URL`, per environment | **none — same origin** |
+| Build toolchain | Python + Streamlit runtime | **none** |
+| Shipping cost in the image | a dependency tree | **~46 KB of static files** |
+
+It is not a downgrade in behaviour. The client renders the markdown subset the model actually emits (headings, lists, emphasis, links, fenced code with copy buttons), attaches collapsible **Reasoning** and **Sources** disclosures to every answer — each source split back into its filename and passage, so attribution is visible without leaving the thread — keeps a light/dark theme with the OS as default, is responsive down to mobile, honours `prefers-reduced-motion`, and polls `/health` every 30 s.
+
+Two details worth calling out:
+
+- **Every model output is HTML-escaped before the markdown renderer runs**, so the only tags in the DOM are ones this codebase authored. Link hrefs are allowlisted to `http(s):` and `mailto:` — `javascript:` and `data:` URLs are dropped. An LLM's output is untrusted input; treating it as such is the whole point of a hand-written renderer.
+- **A blocked request renders as a deliberate notice, not an error.** A refusal is the product working. Showing it in a red failure state teaches users the system is broken when it is doing exactly its job.
+
 ---
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    User([User]) --> UI[Streamlit Chat UI]
-    UI -->|POST /query| API[FastAPI]
+    User([User]) --> UI["Web client<br/>HTML · CSS · JS, no build step"]
+    UI -->|"POST /query · same origin"| API[FastAPI]
 
     API --> G1{"Layer 1<br/>Prompt Guard 2"}
     G1 -->|flagged| G2{"Layer 2<br/>gpt-oss-20b adjudicator"}
@@ -192,6 +220,15 @@ The pipeline is a **LangGraph state machine**, not a linear chain. Three routing
 - **Conditional retrieval** — greetings and history-answerable follow-ups skip the vector store entirely.
 - **Empty-result short-circuit** — zero retrieved context returns a deterministic *"not found"* instead of inviting the LLM to fill the gap from memory.
 - **Retrieval failure ≠ empty knowledge base** — a Qdrant outage raises a typed `RetrievalError` with a distinct status, rather than looking identical to "no documents matched."
+
+The client is not a second service. `web/` is mounted as static files by the same FastAPI app — **after** every API route, because FastAPI resolves in declaration order and the mount is a catch-all. One origin, one process, one container.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /` | Web client (`web/index.html`, `styles.css`, `app.js`) |
+| `POST /query` | Guardrail gate → LangGraph run → answer, reasoning steps, sources |
+| `GET /health` | Liveness **and** guardrail readiness — reports `guardrails: false` so a backend serving traffic with the gate down shows as *Degraded* in the UI instead of silently unprotected |
+| `GET /graph` | Renders the **compiled** LangGraph as a PNG — the node/edge topology drawn from the running graph, not a hand-maintained picture of it |
 
 ---
 
@@ -247,6 +284,34 @@ Non-obvious problems found and fixed. Each documented in [`DOCS/`](DOCS/).
 | 7 | Planner emitted URLs as search queries, and omitted Databricks despite it being ⅓ of the corpus | Those questions skipped retrieval entirely |
 | 8 | Answers truncated mid-sentence before judging | Invented unsupported half-claims for Faithfulness to punish |
 | 9 | Rail-fired detection by substring-matching refusal text | Rewording a refusal silently disabled blocking |
+| 10 | `pip install torch` resolves to the **CUDA** build on Linux | ~2.5 GB of GPU libraries in an image that never touches a GPU |
+| 11 | Docker's `env_file` parser rejects `KEY = value` | Reads the name as `'KEY '` and refuses to start — `python-dotenv` accepts both, so it only breaks in the container |
+| 12 | Hand-maintained top-level pins had silently drifted | `langsmith` pinned at `0.8.3` while the working environment ran `0.10.18` — the image built a different system than the one that was measured |
+
+---
+
+## Packaging
+
+One image serves the API **and** the client. A second target exists only for the batch ingestion job. There is no UI container and no Qdrant container — the vector store is managed cloud.
+
+| Target | Contains | Size | Role |
+|---|---|---|---|
+| `backend` | FastAPI + LangGraph + CPU torch + baked models + `web/` | **1.36 GB** (measured) | Serves API and UI |
+| `ingest` | `backend` + Office parsers | ~1.8 GB | One-shot ingestion |
+
+**Build-time decisions that show up at runtime:**
+
+- **Model weights are baked in at build time**, not fetched on first request. The embedding model is ~420 MB; downloading it inside the request path makes a healthy cold container look broken. `HF_HUB_OFFLINE=1` then guarantees no runtime call to Hugging Face at all. Measured on a clean build: **first query in a fresh container returns in 3.9 s**.
+- **CPU-only torch, installed first** from `download.pytorch.org/whl/cpu`, so `sentence-transformers` resolves against it instead of pulling the CUDA build from PyPI.
+- **The full transitive closure is pinned, not just the top level** (149 packages for serving, 37 more for ingestion), with markers evaluated for **linux/cpython 3.12** rather than the Windows dev host. This project's dependency conflicts were settled by selectively upgrading and downgrading packages; a top-level-only pin lets pip re-resolve inside the image and land back on a broken combination. Both files are **generated from the working environment**, not hand-written.
+- **Ingestion parsers are excluded from the serving image.** `unstructured` alone pulls a large tree the request path never executes, so `app/ingestion/processor.py` imports it lazily and only the `ingest` target installs it.
+- **Non-root by default** — every target runs as uid 10001, with model directories chowned at build so nothing attempts a runtime write to a root-owned path.
+- **Health checks use the interpreter, not `curl`** — the slim base has no curl, and adding one purely for a probe grows the attack surface for nothing.
+- **Secrets never enter the build context.** `.dockerignore` excludes `.env`; Compose injects it at runtime, so nothing sensitive is recoverable from `docker history`.
+- **`--workers 1` on purpose.** Each uvicorn worker loads its own ~420 MB embedding model and its own NeMo rails, so `--workers 4` multiplies memory ~4×. Scale with replicas.
+- **`start_period: 90s`** on the health check, because NeMo Guardrails and LangGraph import for ~30–60 s *before* the socket binds. Without it, Compose marks a perfectly healthy container unhealthy on every start.
+
+Full breakdown and troubleshooting: [DOCS/12_DOCKER.md](DOCS/12_DOCKER.md).
 
 ---
 
@@ -262,6 +327,7 @@ Non-obvious problems found and fixed. Each documented in [`DOCS/`](DOCS/).
 | **Embeddings** | `all-mpnet-base-v2` sentence-transformers — **local**, no API key or quota |
 | **Ingestion** | PDF · HTML · TXT · DOCX · PPTX, parsed on-device |
 | **API / UI** | FastAPI serving a dependency-free web client — no Node, no build step, same origin |
+| **Packaging** | Multi-stage, multi-target Dockerfile + Compose — CPU torch, models baked in, non-root, fully pinned |
 | **Observability** | Pydantic Logfire + LangSmith — nested spans across every node |
 | **Evaluation** | RAGAS (independent judge) + guardrail precision/recall + LLM-free retrieval diagnostics |
 
@@ -277,16 +343,43 @@ app/
 ├── ingestion/         # loaders (5 formats) · chunking · processor (dimension-checked)
 ├── services/retrieval/# local embeddings · Qdrant search · FlashRank
 ├── config.py          # centralised settings + model tiering
-└── main.py            # FastAPI entrypoint — guardrail gate + /query
-evals/                 # golden_dataset · pipeline · guardrails_eval · metrics · dashboard
+└── main.py            # FastAPI entrypoint — guardrail gate, /query, /health, /graph, static mount
 web/                   # Web client — index.html · styles.css · app.js (no build step)
-DATA/                  # 6 source documents + 58 distractors
-DOCS/                  # 11 architecture and operations guides
+evals/                 # golden_dataset · pipeline · guardrails_eval · metrics · Streamlit dashboard
+DATA/                  # true_data/ (6 source documents) + noisy_sample_10/ (10 distractors)
+DOCS/                  # 12 architecture and operations guides
+Dockerfile             # multi-stage: base → pydeps → models → backend → ingest
+docker-compose.yml     # backend service + ingest profile
+requirements*.txt      # dev (all) · prod (serving closure) · ingest (Office parsers)
 ```
+
+> The repo ships a **10-document sample** of the distractor corpus in `DATA/noisy_sample_10/`. The measured numbers above were produced against the full **58-document** set — generated technical noise, kept out of version control because it is filler, not content. Drop any comparable technical documents into a `DATA/noisy_*/` folder to reproduce the diagnostics at full scale; sub-folder names become `source_type` tags automatically.
 
 ---
 
 ## Getting Started
+
+### Docker — the supported path
+
+```powershell
+cp .env.example .env    # then fill in the keys (see below)
+```
+
+```powershell
+docker compose up --build
+```
+
+That is the whole application: API, guardrails, agent and UI at **http://localhost:8000**. First build takes ~10–20 minutes (torch plus two models); rebuilds after a code change take seconds, because dependencies and weights sit in cached layers.
+
+Populating the vector store is a **separate one-shot job**, deliberately behind a Compose profile so it never runs on `up`:
+
+```powershell
+docker compose --profile ingest run --rm ingest DATA --wipe
+```
+
+Run it once against a fresh Qdrant collection. `DATA/` is bind-mounted read-only; `processed_data/` is mounted read-write so chunk metadata lands back on the host. Ingestion uses deterministic point IDs, so re-running overwrites rather than duplicates. See [DOCS/12_DOCKER.md](DOCS/12_DOCKER.md) for the image breakdown and troubleshooting.
+
+### Local Python — for development
 
 ```powershell
 # 1. Install
@@ -299,44 +392,43 @@ python -m app.ingestion.processor DATA --wipe
 # 3. Run — API and web client are the same process
 uvicorn app.main:app --reload --port 8000   # → http://localhost:8000
 
-# 4. Evaluate (optional)
+# 4. Evaluate (optional) — the eval dashboard is still Streamlit
 streamlit run evals/app.py
 ```
 
-**Or run it containerised** — one image, with model weights baked in so the first query never waits on a download:
-
-```powershell
-docker compose up --build                                   # → http://localhost:8000
-docker compose --profile ingest run --rm ingest DATA --wipe # one-shot ingestion
-```
-
-See [DOCS/12_DOCKER.md](DOCS/12_DOCKER.md) for the image breakdown and troubleshooting.
+The **eval suite is a developer tool, not part of the product**, so it is excluded from both container targets and keeps its Streamlit dashboard. Point it at a running backend.
 
 <details>
 <summary><b>Environment configuration</b></summary>
 
+Copy [`.env.example`](.env.example) to `.env` in the repo root:
+
 ```env
-GROQ_API_KEY = ""
-GROQ_FALLBACK_API_KEY = ""
-PORTKEY_API_KEY = ""
-PORTKEY_CONFIG_SLUG = ""            # only if your workspace blocks inline config
-QDRANT_API_KEY = ""
-QDRANT_CLUSTER_ENDPOINT = ""        # https://your-cluster.cloud.qdrant.io
-LOGFIRE_TOKEN = ""
-LANGSMITH_TRACING = false
-LANGSMITH_ENDPOINT = https://api.smith.langchain.com
-LANGSMITH_API_KEY = ""
-LANGSMITH_PROJECT = ""
-JUDGE_GROQ = ""                     # optional — falls back to GROQ_API_KEY
+GROQ_API_KEY=""
+GROQ_FALLBACK_API_KEY=""
+PORTKEY_API_KEY=""
+PORTKEY_CONFIG_SLUG=""            # only if your workspace blocks inline config
+QDRANT_API_KEY=""
+QDRANT_CLUSTER_ENDPOINT=""        # https://your-cluster.cloud.qdrant.io
+LOGFIRE_TOKEN=""
+LANGSMITH_TRACING=false
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY=""
+LANGSMITH_PROJECT=""
+JUDGE_GROQ=""                     # optional — falls back to GROQ_API_KEY
 ```
+
+**Write `KEY=value` with no spaces around `=`.** `python-dotenv` tolerates `KEY = value`, but Docker's `env_file` parser reads the name as `'KEY '` and refuses to start the container with `invalid env file: variable 'KEY ' contains whitespaces`. The file is never copied into an image — `.dockerignore` excludes it and Compose injects it at runtime.
 
 **No embedding API key required** — embeddings run locally.
 
 Groq token budgets are enforced **per organisation, not per key**; a second key from the same account buys no extra quota. The eval suite isolates itself by judging on a different model *family*.
 
-Ingestion uses deterministic point IDs, so re-ingesting a file overwrites its vectors rather than duplicating them. Without `--wipe`, the collection's vector dimension is verified against the current embedding model and ingestion aborts on mismatch instead of silently mixing embedding spaces.
+Without `--wipe`, ingestion verifies the existing collection's vector dimension against the current embedding model and **aborts on mismatch** rather than silently mixing embedding spaces.
 
-Wait for `Application startup complete` before the first message — NeMo and LangGraph import before the socket accepts traffic.
+Wait for `Application startup complete` before the first message — NeMo and LangGraph import before the socket accepts traffic. The UI shows this: the status indicator reads *Connecting…* until `/health` answers.
+
+The client's request timeout is **120 s**, deliberately generous. Guardrails plus a LangGraph run plus two LLM calls can legitimately exceed 60 s, and the previous 60 s timeout reported a perfectly healthy backend as offline.
 
 </details>
 

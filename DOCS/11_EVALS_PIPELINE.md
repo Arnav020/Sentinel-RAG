@@ -31,7 +31,7 @@ We parsed the following real enterprise documents from `data/true_data/`:
 | `cronjobs.docx` | Kubernetes Jobs and CronJobs | `python-docx` |
 | `monitor_job.docx` | Monitoring Kubernetes job status | `python-docx` |
 
-> We use `python-docx` and `python-pptx` directly in `evals/data_parser.py` — not the `unstructured` library — so the golden dataset builder is lightweight and fast.
+> The one-off builder used `python-docx` and `python-pptx` directly rather than the `unstructured` library, to stay lightweight. It has since been removed — the dataset it produced is committed as [`evals/golden_dataset.json`](../evals/golden_dataset.json), which is what the suite reads.
 
 ### How Each Golden Was Written
 

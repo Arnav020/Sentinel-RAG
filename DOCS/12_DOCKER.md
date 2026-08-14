@@ -173,7 +173,7 @@ Regenerate after changing dependencies locally rather than editing by hand.
   secret manager (Cloud Run secrets, ECS Secrets Manager) rather than shipping
   a `.env`.
 - **Cloud Run.** It injects `$PORT`; either honour it in the `CMD` or configure
-  the service to target 8000. `.gcloudignore` mirrors `.dockerignore`.
+  the service to target 8000.
 - **Non-root.** All targets run as uid 10001 (`appuser`). Model directories are
   chowned at build so no runtime write to a root-owned path is attempted.
 - **Health checks** use the interpreter, not `curl` — the slim base image has no
