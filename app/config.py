@@ -220,15 +220,39 @@ class Settings:
 
     @classmethod
     def missing_required(cls) -> list[str]:
-        """Names of secrets needed to serve traffic that are not configured."""
+        """
+        Names of secrets needed to serve traffic that are not configured.
+
+        `QDRANT_API_KEY` is deliberately conditional. A managed Qdrant Cloud
+        endpoint needs one; a local or self-hosted instance does not, and
+        demanding it there is not a safety check - it just blocks a legitimate
+        setup. Two cases are treated as fine:
+
+          * the endpoint is localhost / an in-cluster host, or
+          * the variable is present but empty, which is how a caller says
+            "this deployment has no auth" on purpose.
+
+        Only an entirely unset key against a remote endpoint is an error.
+        `os.getenv` returns None when unset and "" when set-but-empty, so those
+        two intentions stay distinguishable.
+        """
         missing = []
         if not cls.QDRANT_URL:
             missing.append("QDRANT_CLUSTER_ENDPOINT")
-        if not cls.QDRANT_API_KEY:
+        elif cls.QDRANT_API_KEY is None and not cls.qdrant_is_local():
             missing.append("QDRANT_API_KEY")
         if not cls.GROQ_API_KEY:
             missing.append("GROQ_API_KEY")
         return missing
+
+    @classmethod
+    def qdrant_is_local(cls) -> bool:
+        """True when the vector store is reachable without credentials."""
+        url = (cls.QDRANT_URL or "").lower()
+        return any(
+            host in url
+            for host in ("localhost", "127.0.0.1", "0.0.0.0", "://qdrant", "host.docker.internal")
+        )
 
     @classmethod
     def validate(cls) -> None:

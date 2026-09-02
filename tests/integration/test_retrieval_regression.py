@@ -46,7 +46,19 @@ def _qdrant_reachable() -> bool:
         return False
 
 
-requires_qdrant = pytest.mark.skipif(not _qdrant_reachable(), reason="no reachable Qdrant instance")
+_QDRANT_UP = _qdrant_reachable()
+
+# Skipping is correct locally - not everyone has a Qdrant to hand. It is wrong
+# in CI, where a silent skip turns the tier that is supposed to gate retrieval
+# quality into a green check that asserted nothing. REQUIRE_INTEGRATION=1 makes
+# an unreachable Qdrant a hard failure instead, and CI sets it.
+if os.getenv("REQUIRE_INTEGRATION") == "1" and not _QDRANT_UP:
+    raise RuntimeError(
+        f"REQUIRE_INTEGRATION=1 but no Qdrant is reachable at {settings.QDRANT_URL!r}. "
+        "These tests must not be skipped in CI."
+    )
+
+requires_qdrant = pytest.mark.skipif(not _QDRANT_UP, reason="no reachable Qdrant instance")
 
 
 @pytest.fixture(scope="module")

@@ -82,8 +82,14 @@ jobs:
         # the step below, which does not depend on the image's contents.
     env:
       QDRANT_CLUSTER_ENDPOINT: http://localhost:6333
+      # Explicitly empty: the service container runs without auth. Config
+      # treats "set but empty" as a deliberate no-auth deployment, and only an
+      # entirely unset key against a REMOTE endpoint as an error.
       QDRANT_API_KEY: ""
       QDRANT_COLLECTION: ci_fixture
+      # Turn "no Qdrant, skip these" into a hard failure. A silently skipped
+      # integration tier is a green check that asserted nothing.
+      REQUIRE_INTEGRATION: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -117,7 +123,9 @@ jobs:
           echo "Qdrant did not become ready"; exit 1
 
       - name: Integration tests
-        run: pytest tests/integration -q --junitxml=junit-integration.xml
+        # -ra prints a short summary of skips, so a test quietly opting out is
+        # visible in the log rather than hidden inside a green step.
+        run: pytest tests/integration -q -ra --junitxml=junit-integration.xml
 
       - name: Retrieval regression vs committed baseline
         run: python -m tools.check_baseline --fixture

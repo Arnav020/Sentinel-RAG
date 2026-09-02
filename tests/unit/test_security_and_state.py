@@ -165,3 +165,37 @@ class TestConfigValidation:
     def test_reports_missing_secrets(self, monkeypatch):
         monkeypatch.setattr(Settings, "QDRANT_URL", None)
         assert "QDRANT_CLUSTER_ENDPOINT" in Settings.missing_required()
+
+    def test_local_qdrant_needs_no_api_key(self, monkeypatch):
+        """
+        A local or self-hosted Qdrant has no auth. Demanding a key there is not
+        a safety check - it blocks a legitimate setup, and it broke CI, where
+        the service container runs without credentials.
+        """
+        monkeypatch.setattr(Settings, "QDRANT_URL", "http://localhost:6333")
+        monkeypatch.setattr(Settings, "QDRANT_API_KEY", "")
+        assert "QDRANT_API_KEY" not in Settings.missing_required()
+
+    def test_empty_key_is_an_intentional_choice(self, monkeypatch):
+        """Set-but-empty means "this deployment has no auth", not "unconfigured"."""
+        monkeypatch.setattr(Settings, "QDRANT_URL", "https://xyz.cloud.qdrant.io")
+        monkeypatch.setattr(Settings, "QDRANT_API_KEY", "")
+        assert "QDRANT_API_KEY" not in Settings.missing_required()
+
+    def test_remote_qdrant_with_no_key_at_all_is_an_error(self, monkeypatch):
+        monkeypatch.setattr(Settings, "QDRANT_URL", "https://xyz.cloud.qdrant.io")
+        monkeypatch.setattr(Settings, "QDRANT_API_KEY", None)
+        assert "QDRANT_API_KEY" in Settings.missing_required()
+
+    @pytest.mark.parametrize(
+        "url,local",
+        [
+            ("http://localhost:6333", True),
+            ("http://127.0.0.1:6333", True),
+            ("http://qdrant:6333", True),
+            ("https://abc.us-east.aws.cloud.qdrant.io:6333", False),
+        ],
+    )
+    def test_local_endpoint_detection(self, monkeypatch, url, local):
+        monkeypatch.setattr(Settings, "QDRANT_URL", url)
+        assert Settings.qdrant_is_local() is local
