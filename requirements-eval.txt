@@ -1,0 +1,21 @@
+# ==============================================================================
+# EVALUATION REQUIREMENTS - pinned, layered on requirements-prod.txt
+#
+# Pinned for the same reason the serving closure is pinned, and arguably a more
+# important one: the credibility of every published number depends on the
+# metric implementations being the ones that produced it. These were previously
+# unpinned and absent from both pinned files, so a re-run could silently resolve
+# different metric code and different results.
+#
+# NOTE on langchain-google-vertexai: ragas imports ChatVertexAI from a
+# langchain-community path that upstream removed. evals/harness/ragas_eval.py
+# installs a sys.modules shim before importing ragas; this package is what the
+# shim needs to exist. Pinned so the workaround cannot break unnoticed.
+# ==============================================================================
+
+ragas==0.4.3
+langchain-google-vertexai==3.2.4
+datasets==5.0.1
+pyarrow==23.0.1
+appdirs==1.4.4
+diskcache==5.6.3

@@ -1,0 +1,250 @@
+{
+  "meta": {
+    "timestamp": "2026-09-02T18:03:49.470486+00:00",
+    "git_sha": "523854d",
+    "python": "3.12.3",
+    "corpus": {
+      "collection": "kubernetes_docs",
+      "points": 2135,
+      "status": "green",
+      "dim": 768,
+      "topics": {
+        "workloads": 468,
+        "security": 249,
+        "configuration": 246,
+        "storage": 232,
+        "networking": 220,
+        "architecture": 198,
+        "operations": 198,
+        "autoscaling": 171,
+        "jobs": 153
+      }
+    },
+    "dataset": {
+      "path": "C:\\Users\\HP\\Desktop\\Coding\\Agentic RAG\\evals\\dataset\\golden_dataset.json",
+      "total": 147,
+      "counts": {
+        "answerable": 85,
+        "unanswerable_in_domain": 18,
+        "off_domain": 10,
+        "adversarial": 16,
+        "conversational": 4,
+        "uncovered_retrieval_positive": 14
+      },
+      "generator_model": "openai/gpt-oss-20b",
+      "verifier_model": "qwen/qwen3.8-27b"
+    },
+    "config": {
+      "embedding_model": "all-mpnet-base-v2",
+      "generation_model": "openai/gpt-oss-120b",
+      "planner_model": "openai/gpt-oss-20b",
+      "judge_model": "qwen/qwen3.8-27b",
+      "rerank_threshold": 0.35,
+      "retrieval_candidates": 20,
+      "retrieval_top_n": 5,
+      "chunk_size": 1200,
+      "chunk_overlap": 150,
+      "use_gateway": false
+    },
+    "packages": {
+      "ragas": "0.4.3",
+      "sentence-transformers": "5.7.0",
+      "qdrant-client": "1.19.0",
+      "flashrank": "0.2.10",
+      "nemoguardrails": "0.23.0",
+      "langgraph": "1.2.11"
+    }
+  },
+  "retrieval": {
+    "n": {
+      "answerable": 85,
+      "should_abstain": 28
+    },
+    "retrieval": [
+      {
+        "metric": "hit@1",
+        "value": 0.6353,
+        "ci_low": 0.5292,
+        "ci_high": 0.7297,
+        "n": 85
+      },
+      {
+        "metric": "hit@3",
+        "value": 0.8118,
+        "ci_low": 0.7159,
+        "ci_high": 0.8807,
+        "n": 85
+      },
+      {
+        "metric": "hit@5",
+        "value": 0.8588,
+        "ci_low": 0.7693,
+        "ci_high": 0.9174,
+        "n": 85
+      },
+      {
+        "metric": "hit@20",
+        "value": 0.8706,
+        "ci_low": 0.783,
+        "ci_high": 0.9262,
+        "n": 85
+      },
+      {
+        "metric": "doc_hit@1",
+        "value": 0.8941,
+        "ci_low": 0.8109,
+        "ci_high": 0.9433,
+        "n": 85
+      },
+      {
+        "metric": "doc_hit@5",
+        "value": 0.9647,
+        "ci_low": 0.9013,
+        "ci_high": 0.9879,
+        "n": 85
+      },
+      {
+        "metric": "ndcg@5",
+        "value": 0.7587,
+        "ci_low": 0.6783,
+        "ci_high": 0.8328,
+        "n": 85
+      },
+      {
+        "metric": "gold_containment@k",
+        "value": 0.8588,
+        "ci_low": 0.7765,
+        "ci_high": 0.9294,
+        "n": 85
+      },
+      {
+        "metric": "mrr",
+        "value": 0.726
+      }
+    ],
+    "abstention_on_answerable": {
+      "metric": "false_abstention_rate",
+      "value": 0.0118,
+      "ci_low": 0.0021,
+      "ci_high": 0.0637,
+      "n": 85
+    },
+    "gold_survived_threshold": {
+      "metric": "gold_survived_threshold",
+      "value": 0.8588,
+      "ci_low": 0.7693,
+      "ci_high": 0.9174,
+      "n": 85
+    },
+    "abstention_on_unanswerable": {
+      "metric": "correct_abstention_rate",
+      "value": 1.0,
+      "ci_low": 0.8794,
+      "ci_high": 1.0,
+      "n": 28
+    },
+    "abstention_unanswerable_in_domain": {
+      "metric": "correct_abstention_unanswerable_in_domain",
+      "value": 1.0,
+      "ci_low": 0.8241,
+      "ci_high": 1.0,
+      "n": 18
+    },
+    "abstention_off_domain": {
+      "metric": "correct_abstention_off_domain",
+      "value": 1.0,
+      "ci_low": 0.7225,
+      "ci_high": 1.0,
+      "n": 10
+    },
+    "by_topic": {
+      "architecture": {
+        "metric": "hit@5",
+        "value": 0.9,
+        "ci_low": 0.5958,
+        "ci_high": 0.9821,
+        "n": 10
+      },
+      "autoscaling": {
+        "metric": "hit@5",
+        "value": 0.4,
+        "ci_low": 0.1176,
+        "ci_high": 0.7693,
+        "n": 5
+      },
+      "configuration": {
+        "metric": "hit@5",
+        "value": 1.0,
+        "ci_low": 0.6756,
+        "ci_high": 1.0,
+        "n": 8
+      },
+      "jobs": {
+        "metric": "hit@5",
+        "value": 0.8333,
+        "ci_low": 0.4365,
+        "ci_high": 0.9699,
+        "n": 6
+      },
+      "networking": {
+        "metric": "hit@5",
+        "value": 0.9091,
+        "ci_low": 0.6226,
+        "ci_high": 0.9838,
+        "n": 11
+      },
+      "operations": {
+        "metric": "hit@5",
+        "value": 0.8333,
+        "ci_low": 0.4365,
+        "ci_high": 0.9699,
+        "n": 6
+      },
+      "security": {
+        "metric": "hit@5",
+        "value": 0.8571,
+        "ci_low": 0.4869,
+        "ci_high": 0.9743,
+        "n": 7
+      },
+      "storage": {
+        "metric": "hit@5",
+        "value": 0.9091,
+        "ci_low": 0.6226,
+        "ci_high": 0.9838,
+        "n": 11
+      },
+      "workloads": {
+        "metric": "hit@5",
+        "value": 0.8571,
+        "ci_low": 0.6536,
+        "ci_high": 0.9502,
+        "n": 21
+      }
+    },
+    "by_question_type": {
+      "exact_token": {
+        "metric": "hit@5",
+        "value": 0.9167,
+        "ci_low": 0.6461,
+        "ci_high": 0.9851,
+        "n": 12
+      },
+      "factual": {
+        "metric": "hit@5",
+        "value": 0.8393,
+        "ci_low": 0.7219,
+        "ci_high": 0.9131,
+        "n": 56
+      },
+      "procedural": {
+        "metric": "hit@5",
+        "value": 0.8824,
+        "ci_low": 0.6566,
+        "ci_high": 0.9671,
+        "n": 17
+      }
+    },
+    "duration_seconds": 71.8
+  }
+}

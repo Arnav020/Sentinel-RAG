@@ -1,0 +1,154 @@
+<!--
+title: Parallel Processing using Expansions
+source_url: https://kubernetes.io/docs/tasks/job/parallel-processing-expansion/
+doc_topic: jobs
+license: CC BY 4.0 - The Kubernetes Authors
+-->
+<h1>Parallel Processing using Expansions</h1>
+<h1 data-pagefind-weight="10">Parallel Processing using Expansions</h1><p>This task demonstrates running multiple <a aria-label="Jobs" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/workloads/controllers/job/" target="_blank" title="A finite or batch task that runs to completion.">Jobs</a>
+based on a common template. You can use this approach to process batches of work in
+parallel.</p><p>For this example there are only three items: <em>apple</em>, <em>banana</em>, and <em>cherry</em>.
+The sample Jobs process each item by printing a string then pausing.</p><p>See <a href="#using-jobs-in-real-workloads">using Jobs in real workloads</a> to learn about how
+this pattern fits more realistic use cases.</p><h2 id="before-you-begin">Before you begin</h2><p>You should be familiar with the basic,
+non-parallel, use of <a href="/docs/concepts/workloads/controllers/job/">Job</a>.</p><p>You need to have a Kubernetes cluster, and the kubectl command-line tool must
+be configured to communicate with your cluster. It is recommended to run this tutorial on a cluster with at least two nodes that are not acting as control plane hosts. If you do not already have a
+cluster, you can create one by using
+<a href="https://minikube.sigs.k8s.io/docs/tutorials/multi_node/">minikube</a>
+or you can use one of these Kubernetes playgrounds:</p><ul><li><a href="https://labs.iximiuz.com/playgrounds?category=kubernetes&amp;filter=all">iximiuz Labs</a></li><li><a href="https://killercoda.com/playgrounds/scenario/kubernetes">Killercoda</a></li><li><a href="https://kodekloud.com/public-playgrounds">KodeKloud</a></li></ul><p>For basic templating you need the command-line utility <code>sed</code>.</p><p>To follow the advanced templating example, you need a working installation of
+<a href="https://www.python.org/">Python</a>, and the Jinja2 template
+library for Python.</p><p>Once you have Python set up, you can install Jinja2 by running:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">pip install --user jinja2
+</span></span></code></pre></div><h2 id="create-jobs-based-on-a-template">Create Jobs based on a template</h2><p>First, download the following template of a Job to a file called <code>job-tmpl.yaml</code>.
+Here's what you'll download:</p><div class="highlight code-sample"><div class="copy-code-icon"><a download="application/job/job-tmpl.yaml" href="https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples/application/job/job-tmpl.yaml"><code>application/job/job-tmpl.yaml</code>
+</a><img class="icon-copycode" onclick='copyCode("application-job-job-tmpl-yaml")' src="/images/copycode.svg" title="Copy application/job/job-tmpl.yaml to clipboard"/></div><div class="includecode" id="application-job-job-tmpl-yaml"><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">process-item-$ITEM</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">labels</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">jobgroup</span><span class="p">:</span><span class="w"> </span><span class="l">jobexample</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">jobexample</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">labels</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">jobgroup</span><span class="p">:</span><span class="w"> </span><span class="l">jobexample</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">c</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">busybox:1.28</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"sh"</span><span class="p">,</span><span class="w"> </span><span class="s2">"-c"</span><span class="p">,</span><span class="w"> </span><span class="s2">"echo Processing item $ITEM &amp;&amp; sleep 5"</span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span></code></pre></div></div></div><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="c1"># Use curl to download job-tmpl.yaml</span>
+</span></span><span class="line"><span class="cl">curl -L -s -O https://k8s.io/examples/application/job/job-tmpl.yaml
+</span></span></code></pre></div><p>The file you downloaded is not yet a valid Kubernetes
+<a aria-label="manifest" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/reference/glossary/?all=true#term-manifest" target="_blank" title="A serialized specification of one or more Kubernetes API objects.">manifest</a>.
+Instead that template is a YAML representation of a Job object with some placeholders
+that need to be filled in before it can be used. The <code>$ITEM</code> syntax is not meaningful to Kubernetes.</p><h3 id="create-manifests-from-the-template">Create manifests from the template</h3><p>The following shell snippet uses <code>sed</code> to replace the string <code>$ITEM</code> with the loop
+variable, writing into a temporary directory named <code>jobs</code>. Run this now:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="c1"># Expand the template into multiple files, one for each item to be processed.</span>
+</span></span><span class="line"><span class="cl">mkdir ./jobs
+</span></span><span class="line"><span class="cl"><span class="k">for</span> i in apple banana cherry
+</span></span><span class="line"><span class="cl"><span class="k">do</span>
+</span></span><span class="line"><span class="cl">  cat job-tmpl.yaml <span class="p">|</span> sed <span class="s2">"s/\$ITEM/</span><span class="nv">$i</span><span class="s2">/"</span> &gt; ./jobs/job-<span class="nv">$i</span>.yaml
+</span></span><span class="line"><span class="cl"><span class="k">done</span>
+</span></span></code></pre></div><p>Check if it worked:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">ls jobs/
+</span></span></code></pre></div><p>The output is similar to this:</p><pre tabindex="0"><code>job-apple.yaml
+job-banana.yaml
+job-cherry.yaml
+</code></pre><p>You could use any type of template language (for example: Jinja2; ERB), or
+write a program to generate the Job manifests.</p><h3 id="create-jobs-from-the-manifests">Create Jobs from the manifests</h3><p>Next, create all the Jobs with one kubectl command:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl create -f ./jobs
+</span></span></code></pre></div><p>The output is similar to this:</p><pre tabindex="0"><code>job.batch/process-item-apple created
+job.batch/process-item-banana created
+job.batch/process-item-cherry created
+</code></pre><p>Now, check on the jobs:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl get <span class="nb">jobs</span> -l <span class="nv">jobgroup</span><span class="o">=</span>jobexample
+</span></span></code></pre></div><p>The output is similar to this:</p><pre tabindex="0"><code>NAME                  COMPLETIONS   DURATION   AGE
+process-item-apple    1/1           14s        22s
+process-item-banana   1/1           12s        21s
+process-item-cherry   1/1           12s        20s
+</code></pre><p>Using the <code>-l</code> option to kubectl selects only the Jobs that are part
+of this group of jobs (there might be other unrelated jobs in the system).</p><p>You can check on the Pods as well using the same
+<a aria-label="label selector" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/overview/working-with-objects/labels/" target="_blank" title="Allows users to filter a list of resources based on labels.">label selector</a>:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl get pods -l <span class="nv">jobgroup</span><span class="o">=</span>jobexample
+</span></span></code></pre></div><p>The output is similar to:</p><pre tabindex="0"><code>NAME                        READY     STATUS      RESTARTS   AGE
+process-item-apple-kixwv    0/1       Completed   0          4m
+process-item-banana-wrsf7   0/1       Completed   0          4m
+process-item-cherry-dnfu9   0/1       Completed   0          4m
+</code></pre><p>We can use this single command to check on the output of all jobs at once:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl logs -f -l <span class="nv">jobgroup</span><span class="o">=</span>jobexample
+</span></span></code></pre></div><p>The output should be:</p><pre tabindex="0"><code>Processing item apple
+Processing item banana
+Processing item cherry
+</code></pre><h3 id="cleanup-1">Clean up</h3><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="c1"># Remove the Jobs you created</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># Your cluster automatically cleans up their Pods</span>
+</span></span><span class="line"><span class="cl">kubectl delete job -l <span class="nv">jobgroup</span><span class="o">=</span>jobexample
+</span></span></code></pre></div><h2 id="use-advanced-template-parameters">Use advanced template parameters</h2><p>In the <a href="#create-jobs-based-on-a-template">first example</a>, each instance of the template had one
+parameter, and that parameter was also used in the Job's name. However,
+<a href="/docs/concepts/overview/working-with-objects/names/#names">names</a> are restricted
+to contain only certain characters.</p><p>This slightly more complex example uses the
+<a href="https://palletsprojects.com/p/jinja/">Jinja template language</a> to generate manifests
+and then objects from those manifests, with a multiple parameters for each Job.</p><p>For this part of the task, you are going to use a one-line Python script to
+convert the template to a set of manifests.</p><p>First, copy and paste the following template of a Job object, into a file called <code>job.yaml.jinja2</code>:</p><pre tabindex="0"><code class="language-liquid" data-lang="liquid">{% set params = [{ "name": "apple", "url": "http://dbpedia.org/resource/Apple", },
+                  { "name": "banana", "url": "http://dbpedia.org/resource/Banana", },
+                  { "name": "cherry", "url": "http://dbpedia.org/resource/Cherry" }]
+%}
+{% for p in params %}
+{% set name = p["name"] %}
+{% set url = p["url"] %}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jobexample-{{ name }}
+  labels:
+    jobgroup: jobexample
+spec:
+  template:
+    metadata:
+      name: jobexample
+      labels:
+        jobgroup: jobexample
+    spec:
+      containers:
+      - name: c
+        image: busybox:1.28
+        command: ["sh", "-c", "echo Processing URL {{ url }} &amp;&amp; sleep 5"]
+      restartPolicy: Never
+{% endfor %}
+</code></pre><p>The above template defines two parameters for each Job object using a list of
+python dicts (lines 1-4). A <code>for</code> loop emits one Job manifest for each
+set of parameters (remaining lines).</p><p>This example relies on a feature of YAML. One YAML file can contain multiple
+documents (Kubernetes manifests, in this case), separated by <code>---</code> on a line
+by itself.
+You can pipe the output directly to <code>kubectl</code> to create the Jobs.</p><p>Next, use this one-line Python program to expand the template:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="nb">alias</span> <span class="nv">render_template</span><span class="o">=</span><span class="s1">'python -c "from jinja2 import Template; import sys; print(Template(sys.stdin.read()).render());"'</span>
+</span></span></code></pre></div><p>Use <code>render_template</code> to convert the parameters and template into a single
+YAML file containing Kubernetes manifests:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="c1"># This requires the alias you defined earlier</span>
+</span></span><span class="line"><span class="cl">cat job.yaml.jinja2 <span class="p">|</span> render_template &gt; jobs.yaml
+</span></span></code></pre></div><p>You can view <code>jobs.yaml</code> to verify that the <code>render_template</code> script worked
+correctly.</p><p>Once you are happy that <code>render_template</code> is working how you intend,
+you can pipe its output into <code>kubectl</code>:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">cat job.yaml.jinja2 <span class="p">|</span> render_template <span class="p">|</span> kubectl apply -f -
+</span></span></code></pre></div><p>Kubernetes accepts and runs the Jobs you created.</p><h3 id="cleanup-2">Clean up</h3><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="c1"># Remove the Jobs you created</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># Your cluster automatically cleans up their Pods</span>
+</span></span><span class="line"><span class="cl">kubectl delete job -l <span class="nv">jobgroup</span><span class="o">=</span>jobexample
+</span></span></code></pre></div><h2 id="using-jobs-in-real-workloads">Using Jobs in real workloads</h2><p>In a real use case, each Job performs some substantial computation, such as rendering a frame
+of a movie, or processing a range of rows in a database. If you were rendering a movie
+you would set <code>$ITEM</code> to the frame number. If you were processing rows from a database
+table, you would set <code>$ITEM</code> to represent the range of database rows to process.</p><p>In the task, you ran a command to collect the output from Pods by fetching
+their logs. In a real use case, each Pod for a Job writes its output to
+durable storage before completing. You can use a PersistentVolume for each Job,
+or an external storage service. For example, if you are rendering frames for a movie,
+use HTTP to <code>PUT</code> the rendered frame data to a URL, using a different URL for each
+frame.</p><h2 id="labels-on-jobs-and-pods">Labels on Jobs and Pods</h2><p>After you create a Job, Kubernetes automatically adds additional
+<a aria-label="labels" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/overview/working-with-objects/labels" target="_blank" title="Tags objects with identifying attributes that are meaningful and relevant to users.">labels</a> that
+distinguish one Job's pods from another Job's pods.</p><p>In this example, each Job and its Pod template have a label:
+<code>jobgroup=jobexample</code>.</p><p>Kubernetes itself pays no attention to labels named <code>jobgroup</code>. Setting a label
+for all the Jobs you create from a template makes it convenient to operate on all
+those Jobs at once.
+In the <a href="#create-jobs-based-on-a-template">first example</a> you used a template to
+create several Jobs. The template ensures that each Pod also gets the same label, so
+you can check on all Pods for these templated Jobs with a single command.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>The label key <code>jobgroup</code> is not special or reserved.
+You can pick your own labelling scheme.
+There are <a href="/docs/concepts/overview/working-with-objects/common-labels/#labels">recommended labels</a>
+that you can use if you wish.</div><h2 id="alternatives">Alternatives</h2><p>If you plan to create a large number of Job objects, you may find that:</p><ul><li>Even using labels, managing so many Jobs is cumbersome.</li><li>If you create many Jobs in a batch, you might place high load
+on the Kubernetes control plane. Alternatively, the Kubernetes API
+server could rate limit you, temporarily rejecting your requests with a 429 status.</li><li>You are limited by a <a aria-label="resource quota" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/policy/resource-quotas/" target="_blank" title="Provides constraints that limit aggregate resource consumption per namespace.">resource quota</a>
+on Jobs: the API server permanently rejects some of your requests
+when you create a great deal of work in one batch.</li></ul><p>There are other <a href="/docs/concepts/workloads/controllers/job/#job-patterns">job patterns</a>
+that you can use to process large amounts of work without creating very many Job
+objects.</p><p>You could also consider writing your own <a href="/docs/concepts/architecture/controller/">controller</a>
+to manage Job objects automatically.</p><div class="td-page-meta__lastmod">Last modified August 24, 2023 at 6:38 PM PST: <a href="https://github.com/kubernetes/website/commit/e8b136c3b3e6fb96580f889ed3260a0918e99896">Use code_sample shortcode instead of code shortcode (e8b136c3b3)</a></div>

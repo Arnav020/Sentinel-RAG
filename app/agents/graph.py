@@ -1,53 +1,48 @@
-from langgraph.graph import StateGraph, END
+"""
+The LangGraph state machine.
+
+planner -> (retriever -> responder | responder) -> END
+
+The retriever is skipped only for turns the planner marks conversational.
+Every other turn goes through retrieval, and retrieval decides for itself
+whether anything relevant exists - the responder is never asked to guess.
+"""
+
+from __future__ import annotations
+
 from langgraph.checkpoint.memory import MemorySaver
-from app.agents.state import AgentState
+from langgraph.graph import END, StateGraph
+
 from app.agents.nodes.planner import planner_node
-from app.agents.nodes.retriever import retrieve_node
 from app.agents.nodes.responder import generate_node
+from app.agents.nodes.retriever import retrieve_node
+from app.agents.state import CONVERSATIONAL, AgentState
 
 
-# 1. Initialize the State Graph
-workflow = StateGraph(AgentState)
+def route_planner(state: AgentState) -> str:
+    return "responder" if state.get("current_query") == CONVERSATIONAL else "retriever"
 
 
-# 2. Define the Nodes
-workflow.add_node("planner", planner_node)
-workflow.add_node("retriever", retrieve_node)
-workflow.add_node("responder", generate_node)
-
-# 3. Define the Edges & Routing Logic
-def route_planner(state: AgentState):
+def build_graph(checkpointer=None):
     """
-    Routes the workflow based on the planner's decision.
+    Compile the graph.
+
+    Exposed as a function so tests can build an isolated graph with their own
+    checkpointer instead of sharing the module-level singleton's memory.
     """
-    if state["current_query"] == "CONVERSATIONAL":
-        return "responder"
-    return "retriever"
+    workflow = StateGraph(AgentState)
+    workflow.add_node("planner", planner_node)
+    workflow.add_node("retriever", retrieve_node)
+    workflow.add_node("responder", generate_node)
 
-workflow.set_entry_point("planner")
+    workflow.set_entry_point("planner")
+    workflow.add_conditional_edges(
+        "planner", route_planner, {"retriever": "retriever", "responder": "responder"}
+    )
+    workflow.add_edge("retriever", "responder")
+    workflow.add_edge("responder", END)
 
-
-# Conditional Edge: Planner -> Router -> (Retriever OR Responder)
-workflow.add_conditional_edges(
-    "planner",
-    route_planner,
-    {
-        "retriever": "retriever",
-        "responder": "responder"
-    }
-)
+    return workflow.compile(checkpointer=checkpointer or MemorySaver())
 
 
-workflow.add_edge("retriever", "responder")
-workflow.add_edge("responder", END)
-
-
-# --- MEMORY UPGRADE ---
-# MemorySaver allows the agent to remember conversations based on 'thread_id'
-checkpointer = MemorySaver()
-
-
-# 4. Compile the Graph with Memory
-rag_agent = workflow.compile(checkpointer=checkpointer)
-
-
+rag_agent = build_graph()

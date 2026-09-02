@@ -1,23 +1,39 @@
+"""
+The guardrail gate.
+
+Layer 1 - Prompt Guard 2 injection classifier      (NeMo input rail)
+Layer 2 - intent adjudicator for stage-1 flags     (NeMo input rail)
+Layer 3 - topical scope classifier                 (NeMo input rail)
+Layer 4 - hardened generation prompt               (responder.py)
+
+The gate now sees recent conversation history, not just the current message. An
+injection split across turns - one message establishing a persona, a later
+innocuous one triggering it - previously passed straight through, because the
+graph replayed history into the prompt but the gate never inspected it.
+"""
+
+from __future__ import annotations
+
 import logfire
-from nemoguardrails import RailsConfig, LLMRails
+from nemoguardrails import LLMRails, RailsConfig
 from nemoguardrails.actions import action
 
-from app.guardrails.colang_rules import COLANG_CONTENT, YAML_CONTENT, BLOCKING_FLOWS
+from app.guardrails.colang_rules import BLOCKING_FLOWS, COLANG_CONTENT, YAML_CONTENT
 from app.guardrails.prompt_guard import detect_injection
 from app.guardrails.topic_filter import is_off_topic
 
 _rails: LLMRails | None = None
 
+# Set per call so the Colang actions, which only receive NeMo's own context, can
+# see the conversation the gate was asked about.
+_pending_history: str = ""
 
-# ── Colang actions ────────────────────────────────────────────────────────────
-# NeMo owns policy (what to check, in what order, what to say when blocking);
-# these actions own detection. Keeping them separate is what lets the gate use
-# purpose-built classifiers instead of few-shot prompting a chat model.
 
 @action(name="detect_injection_action", is_system_action=True)
 async def detect_injection_action(context: dict | None = None) -> bool:
     message = (context or {}).get("user_message", "")
-    is_injection, _score = detect_injection(message)
+    probe = f"{_pending_history}\n{message}".strip() if _pending_history else message
+    is_injection, _score = detect_injection(probe)
     return is_injection
 
 
@@ -28,38 +44,24 @@ async def detect_off_topic_action(context: dict | None = None) -> bool:
 
 
 def initialize_rails() -> None:
-    """Build the NeMo LLMRails singleton at app startup."""
+    """Build the NeMo LLMRails singleton. Called once at application startup."""
     global _rails
-
-    config = RailsConfig.from_content(
-        colang_content=COLANG_CONTENT,
-        yaml_content=YAML_CONTENT,
-    )
-
-    # No `llm=` is passed: this config runs input rails only, and every decision
-    # comes from a registered action, so NeMo never needs a generation model of
-    # its own. That is what removes the ~2,300 tokens/message the old dialog-rail
-    # design spent on intent classification.
-    _rails = LLMRails(config)
-    _rails.register_action(detect_injection_action, "detect_injection_action")
-    _rails.register_action(detect_off_topic_action, "detect_off_topic_action")
-
-    logfire.info("🛡️ NeMo Guardrails initialised (input rails: injection + topic).")
+    config = RailsConfig.from_content(colang_content=COLANG_CONTENT, yaml_content=YAML_CONTENT)
+    rails = LLMRails(config)
+    rails.register_action(detect_injection_action, "detect_injection_action")
+    rails.register_action(detect_off_topic_action, "detect_off_topic_action")
+    _rails = rails
+    logfire.info("Guardrails initialised (input rails: injection + topic).")
 
 
 def rails_ready() -> bool:
-    """True once initialize_rails() has built the singleton. Surfaced on /health
-    so a backend running with the gate down is visibly degraded."""
     return _rails is not None
 
 
 def _extract_response_text(result) -> str:
-    """GenerationResponse.response is a list of message dicts; plain generate() returns a dict."""
     response = getattr(result, "response", result)
     if isinstance(response, list):
-        return " ".join(
-            msg.get("content", "") for msg in response if isinstance(msg, dict)
-        ).strip()
+        return " ".join(m.get("content", "") for m in response if isinstance(m, dict)).strip()
     if isinstance(response, dict):
         return response.get("content", "")
     return str(response)
@@ -67,59 +69,58 @@ def _extract_response_text(result) -> str:
 
 def _blocking_rail_activated(result) -> bool:
     """
-    Read NeMo's structured activation log to decide whether a rail blocked the
-    message, rather than substring-matching the reply against hand-copied
-    refusal phrases (which broke silently whenever wording drifted).
+    Read NeMo's structured activation log rather than substring-matching the
+    reply against hand-copied refusal phrases, which broke silently whenever the
+    wording drifted.
     """
     log = getattr(result, "log", None)
     activated = getattr(log, "activated_rails", None) if log else None
     if not activated:
         return False
-
     for rail in activated:
         name = (getattr(rail, "name", "") or "").lower()
-        if name in BLOCKING_FLOWS:
-            # `stop` is set when the flow halted the request; treat a named
-            # blocking flow as a block even if the attribute is absent.
-            if getattr(rail, "stop", True):
-                return True
+        if name in BLOCKING_FLOWS and getattr(rail, "stop", True):
+            return True
     return False
 
 
-def guard(message: str) -> tuple[bool, str | None]:
+def guard(message: str, history: str = "") -> tuple[bool, str | None]:
     """
-    Run a user message through the guardrail gate.
+    Run a message through the gate.
 
-    Layer 1 — Prompt Guard 2 injection classifier   (via NeMo input rail)
-    Layer 2 — scoped topical classifier             (via NeMo input rail)
-    Layer 3 — hardened system prompts in app/agents/nodes/responder.py, which
-              catch anything that slips past 1 and 2.
+    Returns (True, refusal) if a rail fired - return it and skip the pipeline -
+    or (False, None) if the message is clean.
 
-    Returns:
-        (True,  response) — a rail fired; return this immediately, skip the RAG pipeline.
-        (False, None)     — message is clean; proceed to LangGraph.
+    Fails OPEN: a gate outage degrades protection rather than taking the service
+    down, and layer 4 still applies. Every fail-open path logs at error level so
+    degraded protection is visible rather than silent.
     """
+    global _pending_history
+
     if _rails is None:
-        logfire.warning("⚠️ Guardrails not initialised — skipping gate.")
+        logfire.warning("Guardrails not initialised - skipping gate.")
         return False, None
 
-    with logfire.span("🛡️ Guardrails Check"):
+    with logfire.span("Guardrails"):
+        _pending_history = history or ""
         try:
             result = _rails.generate(
                 messages=[{"role": "user", "content": message}],
-                # Input rails only: generation belongs to LangGraph, and this
-                # keeps the gate to exactly the two classifier calls above.
                 options={"rails": ["input"], "log": {"activated_rails": True}},
             )
         except Exception as e:
-            # Fail open: a gate outage should degrade protection, not the service.
-            logfire.error(f"⚠️ Guardrails check failed, failing open: {e}")
+            logfire.error(f"Guardrails check failed, failing open: {e}")
             return False, None
+        finally:
+            _pending_history = ""
 
         if _blocking_rail_activated(result):
-            content = _extract_response_text(result)
-            logfire.info(f"🛡️ Guardrails fired | query='{message[:80]}'")
-            return True, content
+            logfire.info(f"Guardrails fired | {message[:80]!r}")
+            return True, _extract_response_text(result)
 
-        logfire.info("✅ Guardrails passed.")
         return False, None
+
+
+def reset_for_tests() -> None:
+    global _rails
+    _rails = None

@@ -16,3 +16,35 @@ build-backend = "uv_build"
 
 [tool.uv]
 package = false
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", "notebooks", "processed_data", "DATA", "evals/runs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "E501",    # line length is handled by the formatter
+    "B008",    # FastAPI Depends() in defaults is the framework's idiom
+    "RUF001",  # ambiguous unicode in prose comments is intentional
+    "SIM108",  # ternaries are not always clearer than an if/else
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately import inside functions to control import order and to
+# keep the unit tier free of heavyweight imports.
+"tests/**" = ["E402", "B011"]
+# Several modules must configure logfire before importing anything that emits
+# spans, so imports cannot all sit at the top.
+"app/main.py" = ["E402"]
+"app/ingestion/processor.py" = ["E402"]
+"evals/**" = ["E402"]
+"tools/**" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires a live Qdrant and/or model downloads",
+    "llm: requires a live LLM API key",
+]
+filterwarnings = ["ignore::DeprecationWarning"]

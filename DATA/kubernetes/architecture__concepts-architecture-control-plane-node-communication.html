@@ -1,0 +1,59 @@
+<!--
+title: Communication between Nodes and the Control Plane
+source_url: https://kubernetes.io/docs/concepts/architecture/control-plane-node-communication/
+doc_topic: architecture
+license: CC BY 4.0 - The Kubernetes Authors
+-->
+<h1>Communication between Nodes and the Control Plane</h1>
+<h1 data-pagefind-weight="10">Communication between Nodes and the Control Plane</h1><p>This document catalogs the communication paths between the <a aria-label="API server" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/architecture/#kube-apiserver" target="_blank" title="Control plane component that serves the Kubernetes API.">API server</a>
+and the Kubernetes <a aria-label="cluster" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/reference/glossary/?all=true#term-cluster" target="_blank" title="A set of worker machines, called nodes, that run containerized applications. Every cluster has at least one worker node.">cluster</a>.
+The intent is to allow users to customize their installation to harden the network configuration
+such that the cluster can be run on an untrusted network (or on fully public IPs on a cloud
+provider).</p><h2 id="node-to-control-plane">Node to Control Plane</h2><p>Kubernetes has a "hub-and-spoke" API pattern. All API usage from nodes (or the pods they run)
+terminates at the API server. None of the other control plane components are designed to expose
+remote services. The API server is configured to listen for remote connections on a secure HTTPS
+port (typically 443) with one or more forms of client
+<a href="/docs/reference/access-authn-authz/authentication/">authentication</a> enabled.
+One or more forms of <a href="/docs/reference/access-authn-authz/authorization/">authorization</a> should be
+enabled, especially if <a href="/docs/reference/access-authn-authz/authentication/#anonymous-requests">anonymous requests</a>
+or <a href="/docs/reference/access-authn-authz/authentication/#service-account-tokens">service account tokens</a>
+are allowed.</p><p>Nodes should be provisioned with the public root <a aria-label="certificate" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/tasks/tls/managing-tls-in-a-cluster/" target="_blank" title="A cryptographically secure file used to validate access to the Kubernetes cluster.">certificate</a> for the cluster such that they can
+connect securely to the API server along with valid client credentials. A good approach is that the
+client credentials provided to the kubelet are in the form of a client certificate. See
+<a href="/docs/reference/access-authn-authz/kubelet-tls-bootstrapping/">kubelet TLS bootstrapping</a>
+for automated provisioning of kubelet client certificates.</p><p><a aria-label="Pods" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/workloads/pods/" target="_blank" title="A Pod represents a set of running containers in your cluster.">Pods</a> that wish to connect to the API server can do so securely by leveraging a service account so
+that Kubernetes will automatically inject the public root certificate and a valid bearer token
+into the pod when it is instantiated.
+The <code>kubernetes</code> service (in <code>default</code> namespace) is configured with a virtual IP address that is
+redirected (via <code><a aria-label="kube-proxy" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/reference/command-line-tools-reference/kube-proxy/" target="_blank" title="kube-proxy is a network proxy that runs on each node in the cluster.">kube-proxy</a></code>) to the HTTPS endpoint on the API server.</p><p>The control plane components also communicate with the API server over the secure port.</p><p>As a result, the default operating mode for connections from the nodes and pod running on the
+nodes to the control plane is secured by default and can run over untrusted and/or public
+networks.</p><h2 id="control-plane-to-node">Control plane to node</h2><p>There are two primary communication paths from the control plane (the API server) to the nodes.
+The first is from the API server to the <a aria-label="kubelet" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/reference/command-line-tools-reference/kubelet" target="_blank" title="An agent that runs on each node in the cluster. It makes sure that containers are running in a pod.">kubelet</a> process which runs on each node in the cluster.
+The second is from the API server to any node, pod, or service through the API server's <em>proxy</em>
+functionality.</p><h3 id="api-server-to-kubelet">API server to kubelet</h3><p>The connections from the API server to the kubelet are used for:</p><ul><li>Fetching logs for pods.</li><li>Attaching (usually through <code>kubectl</code>) to running pods.</li><li>Providing the kubelet's port-forwarding functionality.</li></ul><p>These connections terminate at the kubelet's HTTPS endpoint. By default, the API server does not
+verify the kubelet's serving certificate, which makes the connection subject to man-in-the-middle
+attacks and <strong>unsafe</strong> to run over untrusted and/or public networks.</p><p>To verify this connection, use the <code>--kubelet-certificate-authority</code> flag to provide the API
+server with a root certificate bundle to use to verify the kubelet's serving certificate.</p><p>If that is not possible, use <a href="#ssh-tunnels">SSH tunneling</a> between the API server and kubelet if
+required to avoid connecting over an
+untrusted or public network.</p><p>Finally, <a href="/docs/reference/access-authn-authz/kubelet-authn-authz/">Kubelet authentication and/or authorization</a>
+should be enabled to secure the kubelet API.</p><h3 id="api-server-to-nodes-pods-and-services">API server to nodes, pods, and services</h3><p>The connections from the API server to a node, pod, or service default to plain HTTP connections
+and are therefore neither authenticated nor encrypted. They can be run over a secure HTTPS
+connection by prefixing <code>https:</code> to the node, pod, or service name in the API URL, but they will
+not validate the certificate provided by the HTTPS endpoint nor provide client credentials. So
+while the connection will be encrypted, it will not provide any guarantees of integrity. These
+connections <strong>are not currently safe</strong> to run over untrusted or public networks.</p><h3 id="ssh-tunnels">SSH tunnels</h3><p>Kubernetes supports <a href="https://www.ssh.com/academy/ssh/tunneling">SSH tunnels</a> to protect the control plane to nodes communication paths. In this
+configuration, the API server initiates an SSH tunnel to each node in the cluster (connecting to
+the SSH server listening on port 22) and passes all traffic destined for a kubelet, node, pod, or
+service through the tunnel.
+This tunnel ensures that the traffic is not exposed outside of the network in which the nodes are
+running.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>SSH tunnels are currently deprecated, so you shouldn't opt to use them unless you know what you
+are doing. The <a href="#konnectivity-service">Konnectivity service</a> is a replacement for this
+communication channel.</div><h3 id="konnectivity-service">Konnectivity service</h3><div class="feature-state-notice feature-beta"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Beta</span> since Kubernetes v1.18</span></div><p>As a replacement to the SSH tunnels, the Konnectivity service provides TCP level proxy for the
+control plane to cluster communication. The Konnectivity service consists of two parts: the
+Konnectivity server in the control plane network and the Konnectivity agents in the nodes network.
+The Konnectivity agents initiate connections to the Konnectivity server and maintain the network
+connections.
+After enabling the Konnectivity service, all control plane to nodes traffic goes through these
+connections.</p><p>Follow the <a href="/docs/tasks/extend-kubernetes/setup-konnectivity/">Konnectivity service task</a> to set
+up the Konnectivity service in your cluster.</p><h2 id="what-s-next">What's next</h2><ul><li>Read about the <a href="/docs/concepts/architecture/#control-plane-components">Kubernetes control plane components</a></li><li>Learn more about <a href="https://book.kubebuilder.io/multiversion-tutorial/conversion-concepts.html#hubs-spokes-and-other-wheel-metaphors">Hubs and Spoke model</a></li><li>Learn how to <a href="/docs/tasks/administer-cluster/securing-a-cluster/">Secure a Cluster</a></li><li>Learn more about the <a href="/docs/concepts/overview/kubernetes-api/">Kubernetes API</a></li><li><a href="/docs/tasks/extend-kubernetes/setup-konnectivity/">Set up Konnectivity service</a></li><li><a href="/docs/tasks/access-application-cluster/port-forward-access-application-cluster/">Use Port Forwarding to Access Applications in a Cluster</a></li><li>Learn how to <a href="/docs/tasks/debug/debug-application/debug-running-pod/#examine-pod-logs">Fetch logs for Pods</a>, <a href="/docs/tasks/access-application-cluster/port-forward-access-application-cluster/#forward-a-local-port-to-a-port-on-the-pod">use kubectl port-forward</a></li></ul><div class="td-page-meta__lastmod">Last modified September 01, 2024 at 1:54 AM PST: <a href="https://github.com/kubernetes/website/commit/7e64c2db8236a6b7325cf82ec050783a1b0a3850">Fix broken links from "overview/components/#..." to "architecture/#..." (#47724) (7e64c2db82)</a></div>

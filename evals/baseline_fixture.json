@@ -1,0 +1,18 @@
+{
+  "metrics": {
+    "fixture_routing_accuracy": 1.0,
+    "fixture_false_answer_rate": 0.0
+  },
+  "config": {
+    "embedding_model": "all-mpnet-base-v2",
+    "rerank_threshold": 0.35,
+    "retrieval_candidates": 60,
+    "retrieval_top_n": 5,
+    "chunk_size": 1200,
+    "chunk_overlap": 150
+  },
+  "tolerances": {
+    "fixture_routing_accuracy": 0.17,
+    "fixture_false_answer_rate": -0.001
+  }
+}
