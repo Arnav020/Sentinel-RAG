@@ -39,7 +39,8 @@ DATA/
 processed_data/
 
 # --- Not needed by any runtime target ---------------------------------------
-evals/
+# evals/ and tools/ are NOT excluded: the eval image copies them, and excluding
+# them is what previously made the evaluation suite impossible to containerise.
 DOCS/
 notebooks/
 *.md

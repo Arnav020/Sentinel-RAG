@@ -101,16 +101,39 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--worker
 
 
 # ------------------------------------------------------------- ingest --------
-# One-shot batch job: parse DATA/, embed locally, upsert to Qdrant. Adds the
+# One-shot batch job: parse DATA/, embed locally, index into Qdrant. Adds the
 # Office parsers the serving image deliberately omits.
 FROM backend AS ingest
 
 USER root
 COPY requirements-ingest.txt .
 RUN pip install --no-cache-dir -r requirements-ingest.txt
+COPY --chown=appuser:appuser tools/ ./tools/
 USER appuser
 
 HEALTHCHECK NONE
 
 ENTRYPOINT ["python", "-m", "app.ingestion.processor"]
-CMD ["DATA"]
+CMD ["DATA/kubernetes"]
+
+
+# --------------------------------------------------------------- eval --------
+# The evaluation suite, containerised.
+#
+# It was previously excluded from every image by .dockerignore, which meant the
+# one component whose reproducibility the published numbers depend on was the
+# only one that could not be reproduced with a single command.
+FROM backend AS eval
+
+USER root
+COPY requirements-eval.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-eval.txt -r requirements-dev.txt
+COPY --chown=appuser:appuser evals/ ./evals/
+COPY --chown=appuser:appuser tools/ ./tools/
+COPY --chown=appuser:appuser tests/ ./tests/
+USER appuser
+
+HEALTHCHECK NONE
+
+ENTRYPOINT ["python", "-m", "evals.run_eval"]
+CMD ["--tier", "retrieval"]

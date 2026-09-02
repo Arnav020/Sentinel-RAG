@@ -24,7 +24,7 @@
         </svg>
         <div class="brand__text">
           <span class="brand__name">Sentinel<span class="brand__accent">-RAG</span></span>
-          <span class="brand__sub">Documentation assistant</span>
+          <span class="brand__sub">Kubernetes documentation</span>
         </div>
       </div>
     </div>
@@ -50,12 +50,12 @@
 
       <section class="panel">
         <h2 class="panel__title">Knowledge base</h2>
-        <ul class="topics">
-          <li><span class="topics__dot"></span>Kubernetes Jobs &amp; CronJobs</li>
-          <li><span class="topics__dot"></span>Pod autoscaling (HPA / VPA)</li>
-          <li><span class="topics__dot"></span>Redis work queues</li>
-          <li><span class="topics__dot"></span>Job monitoring</li>
-          <li><span class="topics__dot"></span>Databricks job management</li>
+        <p class="panel__sub" id="scopeSummary">Loading indexed topics…</p>
+        <!-- Populated from GET /scope, which reads the live corpus. A static
+             list here is how the previous build advertised coverage the
+             knowledge base did not actually have. -->
+        <ul class="topics" id="topics">
+          <li><span class="topics__dot"></span>Kubernetes documentation</li>
         </ul>
       </section>
     </div>
@@ -103,10 +103,10 @@
             <path d="M16 3 5 8v8c0 6.6 4.5 12.7 11 14 6.5-1.3 11-7.4 11-14V8z" />
           </svg>
         </div>
-        <h1 class="welcome__title">Ask about your infrastructure</h1>
+        <h1 class="welcome__title">Ask about Kubernetes</h1>
         <p class="welcome__body">
-          Answers are grounded in your indexed documentation — and cite the file they came from.
-          Off-topic and adversarial requests are refused at the gate.
+          Grounded in the official Kubernetes documentation, with a citation for every claim.
+          When the docs do not cover something, it says so instead of guessing.
         </p>
         <div class="suggestions" id="suggestions">
           <button class="suggestion" type="button" data-q="How do I monitor the status of a Kubernetes Job?">
@@ -117,13 +117,13 @@
             <span class="suggestion__label">Autoscaling</span>
             <span class="suggestion__text">How does Horizontal Pod Autoscaling work?</span>
           </button>
-          <button class="suggestion" type="button" data-q="How do you start Redis for a Kubernetes work queue?">
-            <span class="suggestion__label">Work queues</span>
-            <span class="suggestion__text">How do you start Redis for a Kubernetes work queue?</span>
+          <button class="suggestion" type="button" data-q="What restart policies can a Kubernetes Job use?">
+            <span class="suggestion__label">Jobs</span>
+            <span class="suggestion__text">What restart policies can a Kubernetes Job use?</span>
           </button>
-          <button class="suggestion" type="button" data-q="When should you use the Databricks REST API instead of the CLI?">
-            <span class="suggestion__label">Databricks</span>
-            <span class="suggestion__text">When should you use the REST API instead of the CLI?</span>
+          <button class="suggestion" type="button" data-q="What is the difference between a StatefulSet and a Deployment?">
+            <span class="suggestion__label">Workloads</span>
+            <span class="suggestion__text">What is the difference between a StatefulSet and a Deployment?</span>
           </button>
         </div>
       </div>
@@ -131,7 +131,7 @@
 
     <div class="composer-wrap">
       <form class="composer" id="composer" autocomplete="off">
-        <textarea id="input" class="composer__input" rows="1" placeholder="Ask about Kubernetes, autoscaling, work queues…"
+        <textarea id="input" class="composer__input" rows="1" placeholder="Ask about Kubernetes workloads, config, networking, storage…"
                   aria-label="Message" maxlength="4000"></textarea>
         <button class="btn btn--send" id="send" type="submit" aria-label="Send message" disabled>
           <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">

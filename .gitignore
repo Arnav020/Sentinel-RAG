@@ -1,29 +1,51 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
 *.egg-info
-
-skills/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Virtual environments
 .venv
+venv/
 
-# Secrets — never commit real credentials
+# Secrets - never commit real credentials
 .env
 .env.local
 
-# Generated/derivative data — regenerate via app/ingestion/processor.py
+# Generated: regenerate with `python -m app.ingestion.processor DATA/kubernetes`
 processed_data/
 
-# Large unrelated filler corpus — not part of the actual demo/portfolio content
-DATA/noisy_data/
-
-# Local R&D notebooks — exploratory work, kept out of the published repo
+# Local R&D notebooks
 notebooks/
+skills/
+.deepeval/
+.logfire/
 
-# Local build logs
-docker-build.log
+# Logs and scratch
 *.log
+docker-build.log
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT ignored, and worth stating why:
+#
+#   DATA/kubernetes/          the corpus IS the product scope, so it is version
+#                             controlled. Rebuild it with tools/fetch_corpus.py.
+#   evals/dataset/            the golden dataset is ground truth; a change to it
+#                             must show up in review like any other change.
+#   evals/runs/               evaluation artifacts. Published numbers that
+#                             nobody can re-open are not evidence, which is why
+#                             the previous suite's results existed only in
+#                             Streamlit session state.
+#   evals/baseline*.json      the thresholds CI gates on.
+# ---------------------------------------------------------------------------
+
+# The original filler corpus, superseded by the curated Kubernetes corpus.
+DATA/noisy_data/
+DATA/noisy_sample_10/
+DATA/true_data/

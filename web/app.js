@@ -32,7 +32,10 @@
     topbarHint: $('topbarHint'),
   };
 
-  let threadId = null;
+  // Conversation ids are issued by the server and are unguessable. The client
+  // never chooses one: a client-chosen id let any caller read another user's
+  // conversation by guessing it.
+  let sessionId = null;
   let turns = 0;
   let inFlight = null;      // AbortController for the active request
   let listEl = null;        // lazily-created message container
@@ -223,14 +226,24 @@
 
   function sourcesHtml(sources) {
     if (!sources?.length) return '';
+    // Citations are objects carrying document, section, relevance and a link
+    // back to the upstream page, so a reader can verify a claim rather than
+    // being shown an anonymous slab of retrieved text.
     const items = sources
-      .map((raw, i) => {
-        const { file, text } = parseSource(raw);
+      .map((src, i) => {
+        const title = src.title || src.source || 'Retrieved passage';
+        const section = src.section ? ` &middot; ${escapeHtml(src.section)}` : '';
+        const score = typeof src.score === 'number' ? src.score.toFixed(2) : '';
+        const link = src.url
+          ? ` <a class="source__link" href="${escapeHtml(src.url)}" target="_blank" rel="noopener noreferrer">source</a>`
+          : '';
         return (
           `<details class="source"><summary class="source__head">` +
             `<span class="source__badge">${i + 1}</span>` +
-            `<span class="source__file">${escapeHtml(file || 'Retrieved chunk')}</span>` +
-          `</summary><p class="source__text">${escapeHtml(text)}</p></details>`
+            `<span class="source__file">${escapeHtml(title)}${section}</span>` +
+            (score ? `<span class="source__score" title="cross-encoder relevance">${score}</span>` : '') +
+          `</summary><p class="source__text">${escapeHtml(src.excerpt || '')}</p>` +
+          `<p class="source__meta">${escapeHtml(src.topic || '')}${link}</p></details>`
         );
       })
       .join('');
@@ -249,9 +262,10 @@
     const answer = data.answer ?? '';
     const status = String(data.status ?? '');
 
-    const blocked =
-      /guardrail/i.test(status) ||
-      steps.some((s) => /guardrails fired/i.test(String(s)));
+    // Three outcomes, and the user needs to tell them apart: the gate refused
+    // the request, the corpus does not cover it, or it was answered.
+    const blocked = data.blocked === true || /guardrail/i.test(status);
+    const abstained = data.abstained === true;
 
     const head = `<div class="msg__role"><span class="msg__avatar">${shieldSvg}</span>Sentinel</div>`;
 
@@ -263,6 +277,16 @@
         `<div class="notice notice--blocked">${warnSvg}` +
           `<div><p class="notice__title">Outside scope</p>` +
           `<p class="notice__text">${escapeHtml(answer)}</p></div></div>` +
+        stepsHtml(steps);
+    } else if (abstained) {
+      // Abstention is the headline behaviour: no documentation covered this, so
+      // nothing was invented. Shown as a distinct state rather than as prose,
+      // because "I don't know" being visibly deliberate is the whole point.
+      node.innerHTML =
+        head +
+        `<div class="notice notice--abstain">${warnSvg}` +
+          `<div><p class="notice__title">Not in the documentation</p>` +
+          `<div class="notice__text">${renderMarkdown(answer)}</div></div></div>` +
         stepsHtml(steps);
     } else {
       node.innerHTML =
@@ -283,6 +307,31 @@
     scrollToEnd();
   }
 
+  async function loadScope() {
+    // The sidebar lists what is actually indexed. A hardcoded list is how the
+    // previous version ended up advertising topics the corpus did not contain.
+    const list = $('topics');
+    if (!list) return;
+    try {
+      const res = await fetch('/scope', { cache: 'no-store' });
+      if (!res.ok) return;
+      const scope = await res.json();
+      const topics = Array.isArray(scope.topics) ? scope.topics : [];
+      if (!topics.length) return;
+      list.innerHTML = topics
+        .map(
+          (t) =>
+            `<li><span class="topics__dot"></span>${escapeHtml(t.label)}` +
+            `<span class="topics__count">${t.passages}</span></li>`
+        )
+        .join('');
+      const sub = $('scopeSummary');
+      if (sub) {
+        sub.textContent = `${scope.points} passages across ${topics.length} areas`;
+      }
+    } catch { /* leave the static fallback in place */ }
+  }
+
   /* ------------------------------------------------------------- net ---- */
 
   async function ask(text) {
@@ -295,7 +344,7 @@
       const res = await fetch('/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ q: text, thread_id: threadId }),
+        body: JSON.stringify({ q: text, session_id: sessionId }),
         signal: controller.signal,
       });
 
@@ -386,12 +435,27 @@
     ask(value);
   }
 
+  async function startSession() {
+    // The server owns conversation identity. If it declines, we simply run
+    // without memory rather than inventing an id the server would reject.
+    try {
+      const res = await fetch('/session', { method: 'POST' });
+      if (res.ok) {
+        sessionId = (await res.json()).session_id ?? null;
+      } else {
+        sessionId = null;
+      }
+    } catch {
+      sessionId = null;
+    }
+    el.threadLabel.textContent = sessionId ? sessionId.slice(0, 8) : 'no memory';
+  }
+
   function newConversation() {
     if (inFlight) { inFlight.abort('cancelled'); inFlight = null; }
-    threadId = uuid();
+    startSession();
     turns = 0;
     el.turnCount.textContent = '0';
-    el.threadLabel.textContent = threadId.slice(0, 8);
     if (listEl) { listEl.remove(); listEl = null; }
     // Rebuild the empty state so a fresh session looks like a fresh session.
     location.hash = '';
@@ -436,8 +500,8 @@
     else if (window.matchMedia?.('(prefers-color-scheme: light)').matches) applyTheme('light');
   } catch { /* storage unavailable — dark default stands */ }
 
-  threadId = uuid();
-  el.threadLabel.textContent = threadId.slice(0, 8);
+  startSession();
+  loadScope();
 
   el.form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
 

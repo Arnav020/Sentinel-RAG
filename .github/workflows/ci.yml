@@ -1,0 +1,187 @@
+name: CI
+
+# Three tiers, split by what they cost:
+#   lint + unit          no network, no secrets, seconds        - every push
+#   integration          local Qdrant service container, no LLM - every push
+#   retrieval-regression baseline comparison, no LLM            - every push
+#   docker               image builds and starts                - every push
+# The judged evaluation is expensive and non-deterministic, so it runs on a
+# schedule in eval.yml rather than gating a pull request.
+
+on:
+  push:
+    branches: [main, "v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  # Tests must never reach a real service or need a real key.
+  LOGFIRE_ENABLED: "false"
+  LANGSMITH_TRACING: "false"
+  USE_GATEWAY: "false"
+  GROQ_API_KEY: "ci-placeholder"
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install ruff==0.14.2
+      - name: Ruff check
+        run: ruff check app tools evals tests
+      - name: Ruff format check
+        run: ruff format --check app tools evals tests
+
+  unit:
+    name: Unit tests (no network)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install runtime deps
+        run: |
+          pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-prod.txt
+          pip install -r requirements-dev.txt
+      - name: Run unit tests
+        env:
+          QDRANT_CLUSTER_ENDPOINT: http://localhost:6333
+          QDRANT_API_KEY: ci-placeholder
+        run: pytest tests/unit -q --junitxml=junit-unit.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-unit
+          path: junit-unit.xml
+
+  integration:
+    name: Integration + retrieval regression
+    runs-on: ubuntu-latest
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.12.4
+        ports: ["6333:6333"]
+        options: >-
+          --health-cmd "bash -c ':> /dev/tcp/127.0.0.1/6333'"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      QDRANT_CLUSTER_ENDPOINT: http://localhost:6333
+      QDRANT_API_KEY: ""
+      QDRANT_COLLECTION: ci_fixture
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      # The embedding and reranker models are ~450 MB combined. Caching them
+      # keeps this job at ~3 minutes instead of re-downloading on every run.
+      - name: Cache models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/flashrank
+          key: models-${{ runner.os }}-mpnet-tinybert-v1
+
+      - name: Install deps
+        run: |
+          pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-prod.txt
+          pip install -r requirements-ingest.txt
+          pip install -r requirements-dev.txt
+
+      - name: Wait for Qdrant
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:6333/readyz && exit 0
+            sleep 2
+          done
+          echo "Qdrant did not become ready"; exit 1
+
+      - name: Integration tests
+        run: pytest tests/integration -q --junitxml=junit-integration.xml
+
+      - name: Retrieval regression vs committed baseline
+        run: python -m tools.check_baseline --fixture
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-integration
+          path: junit-integration.xml
+
+  docker:
+    name: Docker build and smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: backend
+          push: false
+          load: true
+          tags: sentinel-rag:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container starts and reports health
+        run: |
+          docker run -d --name rag \
+            -e QDRANT_CLUSTER_ENDPOINT=http://127.0.0.1:6333 \
+            -e QDRANT_API_KEY=ci \
+            -e GROQ_API_KEY=ci \
+            -e LOGFIRE_ENABLED=false \
+            -p 8000:8000 sentinel-rag:ci
+          # /health must answer even with no reachable Qdrant - reporting
+          # "degraded" is the designed behaviour, crash-looping is not.
+          for i in $(seq 1 45); do
+            if curl -sf http://localhost:8000/health > /tmp/health.json; then
+              cat /tmp/health.json
+              python -c "import json;d=json.load(open('/tmp/health.json'));assert 'guardrails' in d and 'corpus' in d"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "container never became healthy"; docker logs rag; exit 1
+      - name: Container logs
+        if: always()
+        run: docker logs rag || true
+
+  security:
+    name: Dependency and image scan
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install pip-audit==2.9.0
+      - name: Audit pinned dependencies
+        run: pip-audit -r requirements-prod.txt --strict || true
+      - name: Filesystem vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "0"

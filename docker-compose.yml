@@ -1,16 +1,17 @@
 # =============================================================================
-# Sentinel-RAG — local orchestration
+# Sentinel-RAG - local orchestration
 #
-#   docker compose up --build                                   app on :8000
-#   docker compose --profile ingest run --rm ingest DATA --wipe  one-shot ingest
+#   docker compose up --build                                    app on :8000
+#   docker compose --profile ingest run --rm ingest               rebuild index
+#   docker compose --profile eval   run --rm eval --tier retrieval
 #   docker compose logs -f backend
-#   docker compose down
 #
-# One service, not two: the web client is static files served by the same
+# One serving container: the web client is static files served by the same
 # FastAPI process, so there is no UI container, no Node build, and no
 # cross-origin configuration to get wrong.
 #
-# Qdrant is a managed cloud service, so there is no vector-DB container either.
+# Qdrant defaults to the managed cloud service. Uncomment the `qdrant` service
+# below to run entirely locally.
 # =============================================================================
 
 services:
@@ -24,21 +25,28 @@ services:
     # (.dockerignore keeps .env out of the build context for exactly this reason).
     env_file: .env
     environment:
-      # Tracing is opt-in; leaving it on without a key produces noisy 401s.
       LANGSMITH_TRACING: "false"
     ports:
       - "8000:8000"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=4).status==200 else 1)"]
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import urllib.request,sys
+          sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=4).status==200 else 1)
       interval: 30s
       timeout: 5s
       # Generous: NeMo Guardrails and LangGraph import before the socket binds.
       start_period: 90s
       retries: 3
 
-  # One-shot ingestion job. Not started by `up` — run it explicitly:
-  #   docker compose --profile ingest run --rm ingest DATA --wipe
+  # One-shot ingestion. Not started by `up` - run it explicitly:
+  #   docker compose --profile ingest run --rm ingest DATA/kubernetes --wipe
+  # Exits non-zero if any document fails or the index does not reconcile, so a
+  # half-finished ingest cannot report success.
   ingest:
     build:
       context: .
@@ -50,6 +58,39 @@ services:
       # DATA/ is excluded from the build context (large, changes independently
       # of the code), so it is mounted read-only at run time instead.
       - ./DATA:/app/DATA:ro
-      # Chunk metadata written by the processor, surfaced back on the host.
+      # The manifest is written here and read back by tooling on the host.
       - ./processed_data:/app/processed_data
     restart: "no"
+
+  # The evaluation suite. Previously excluded from every image, which meant the
+  # one thing whose reproducibility the published numbers rest on could not be
+  # reproduced with a single command.
+  #   docker compose --profile eval run --rm eval --tier retrieval
+  eval:
+    build:
+      context: .
+      target: eval
+    image: sentinel-rag:eval
+    profiles: ["eval"]
+    env_file: .env
+    environment:
+      # Evaluation must never score a cached generation, or a repeat run
+      # measures the cache rather than the system.
+      GATEWAY_CACHE_ENABLED: "false"
+      USE_GATEWAY: "false"
+    volumes:
+      - ./evals/runs:/app/evals/runs
+    restart: "no"
+# ---------------------------------------------------------------------------
+# Fully local Qdrant. Uncomment, then set in .env:
+#   QDRANT_CLUSTER_ENDPOINT=http://qdrant:6333
+#   QDRANT_API_KEY=
+# ---------------------------------------------------------------------------
+#  qdrant:
+#    image: qdrant/qdrant:v1.12.4
+#    ports: ["6333:6333"]
+#    volumes:
+#      - qdrant_storage:/qdrant/storage
+#
+# volumes:
+#   qdrant_storage:

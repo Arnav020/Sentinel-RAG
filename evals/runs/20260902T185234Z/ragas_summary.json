@@ -1,0 +1,138 @@
+{
+  "faithfulness": {
+    "metric": "faithfulness",
+    "value": 0.8743,
+    "ci_low": 0.7961,
+    "ci_high": 0.9399,
+    "n": 38,
+    "scored": 38,
+    "failed": 0,
+    "coverage": 1.0,
+    "judge": "qwen/qwen3.8-27b"
+  },
+  "response_groundedness": {
+    "metric": "response_groundedness",
+    "value": 1.0,
+    "ci_low": 1.0,
+    "ci_high": 1.0,
+    "n": 18,
+    "scored": 18,
+    "failed": 20,
+    "coverage": 0.474,
+    "judge": "qwen/qwen3.8-27b",
+    "note": "Coverage 0.47 - this judge returned NaN on 20 of 38 samples. Reported for transparency; not a usable measurement at this coverage."
+  },
+  "context_precision": {
+    "metric": "context_precision",
+    "error": "every sample failed to score",
+    "failed": 38
+  },
+  "context_recall": {
+    "metric": "context_recall",
+    "error": "every sample failed to score",
+    "failed": 38
+  },
+  "answer_correctness": {
+    "metric": "answer_correctness",
+    "error": "every sample failed to score",
+    "failed": 38
+  },
+  "answer_relevancy": {
+    "metric": "answer_relevancy",
+    "error": "every sample failed to score",
+    "failed": 38
+  },
+  "faithfulness_by_topic": {
+    "architecture": {
+      "metric": "faithfulness",
+      "value": 0.9667,
+      "ci_low": 0.9,
+      "ci_high": 1.0,
+      "n": 5
+    },
+    "autoscaling": {
+      "metric": "faithfulness",
+      "value": 0.6875,
+      "ci_low": 0.625,
+      "ci_high": 0.75,
+      "n": 2
+    },
+    "configuration": {
+      "metric": "faithfulness",
+      "value": 0.6667,
+      "ci_low": 0.0,
+      "ci_high": 1.0,
+      "n": 3
+    },
+    "jobs": {
+      "metric": "faithfulness",
+      "value": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 3
+    },
+    "networking": {
+      "metric": "faithfulness",
+      "value": 0.91,
+      "ci_low": 0.81,
+      "ci_high": 1.0,
+      "n": 5
+    },
+    "operations": {
+      "metric": "faithfulness",
+      "value": 1.0,
+      "ci_low": 1.0,
+      "ci_high": 1.0,
+      "n": 2
+    },
+    "security": {
+      "metric": "faithfulness",
+      "value": 0.8214,
+      "ci_low": 0.7143,
+      "ci_high": 1.0,
+      "n": 3
+    },
+    "storage": {
+      "metric": "faithfulness",
+      "value": 0.8667,
+      "ci_low": 0.6,
+      "ci_high": 1.0,
+      "n": 5
+    },
+    "workloads": {
+      "metric": "faithfulness",
+      "value": 0.8667,
+      "ci_low": 0.7333,
+      "ci_high": 1.0,
+      "n": 10
+    }
+  },
+  "scored_samples": 38,
+  "scorable_samples": 82,
+  "answerable_total": 83,
+  "subsampled": true,
+  "judge_model": "qwen/qwen3.8-27b",
+  "generation_model": "openai/gpt-oss-120b",
+  "wall_seconds": 1408.0,
+  "duration_seconds": 1408.1,
+  "cross_check": {
+    "metric": "faithfulness",
+    "judge": "qwen/qwen3.6-27b",
+    "value": 0.9722,
+    "ci_low": 0.9167,
+    "ci_high": 1.0,
+    "n": 9,
+    "coverage": 0.45,
+    "note": "A second judge from the same vendor but a different model, run on a stratified subsample. Not directly comparable (different samples) but consistent in direction: 0.972 on 9 samples vs 0.874 on 38."
+  },
+  "incomplete": {
+    "metrics_not_run": [
+      "context_precision",
+      "context_recall",
+      "answer_correctness",
+      "answer_relevancy"
+    ],
+    "reason": "Blocked by the provider daily token cap (200,000 per model). A full six-metric pass costs ~14k judge tokens per sample; both candidate judges were exhausted. Retrieval quality is separately measured judge-free by the retrieval tier (hit@k, nDCG@5, gold containment), which is what context_precision/recall approximate.",
+    "command": "python -m evals.run_eval --tier ragas --ragas-sample 20 --ragas-metrics context_precision,context_recall"
+  }
+}

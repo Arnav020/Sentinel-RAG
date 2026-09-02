@@ -1,0 +1,12 @@
+# ==============================================================================
+# DEVELOPMENT AND TEST REQUIREMENTS
+#
+# Everything needed to run the test suite. Deliberately small: the unit tier
+# must run with no network, no secrets and no model downloads, because a suite
+# that needs credentials is a suite that will not run in CI.
+# ==============================================================================
+
+pytest==9.1.1
+pytest-cov==7.0.0        # install with: pip install pytest-cov
+httpx==0.28.1          # FastAPI TestClient transport
+ruff==0.14.2

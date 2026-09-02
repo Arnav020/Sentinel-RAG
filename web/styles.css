@@ -560,3 +560,45 @@ kbd {
   .thinking__dots i { animation-duration: 1.6s; }
   .disclosure__chevron { transition: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   Abstention notice.
+
+   Deliberately styled as a distinct state rather than as an error or a normal
+   answer: "the documentation does not cover this" is the system working, and it
+   should be visibly different from both a guardrail block and a real answer.
+   --------------------------------------------------------------------------- */
+.notice--abstain {
+  background: color-mix(in srgb, var(--accent, #4b7bec) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #4b7bec) 30%, transparent);
+}
+.notice--abstain .notice__title { color: var(--accent, #4b7bec); }
+
+/* Citation extras: relevance score, topic and upstream link. */
+.source__score {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+  opacity: 0.65;
+  padding-left: 0.6rem;
+}
+.source__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.72rem;
+  opacity: 0.7;
+  margin: 0.35rem 0 0;
+}
+.source__link { text-decoration: underline; }
+.topics__count {
+  float: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+  opacity: 0.55;
+}
+.panel__sub {
+  margin: 0 0 0.55rem;
+  font-size: 0.74rem;
+  opacity: 0.65;
+}

@@ -1,0 +1,33 @@
+{
+  "metrics": {
+    "hit@1": 0.7349,
+    "hit@3": 0.9157,
+    "hit@5": 0.9639,
+    "hit@60": 0.988,
+    "doc_hit@1": 0.9398,
+    "doc_hit@5": 1.0,
+    "ndcg@5": 0.8597,
+    "gold_containment@k": 0.9639,
+    "mrr": 0.8275,
+    "correct_abstention_rate": 0.9286,
+    "false_abstention_rate": 0.0
+  },
+  "recorded_from": "evals\\runs\\20260902T185234Z\\summary.json",
+  "config": {
+    "embedding_model": "all-mpnet-base-v2",
+    "rerank_threshold": 0.35,
+    "retrieval_candidates": 60,
+    "retrieval_top_n": 5,
+    "chunk_size": 1200,
+    "chunk_overlap": 150
+  },
+  "tolerances": {
+    "hit@1": 0.08,
+    "hit@5": 0.06,
+    "doc_hit@5": 0.05,
+    "ndcg@5": 0.06,
+    "gold_containment@k": 0.06,
+    "correct_abstention_rate": 0.05,
+    "false_abstention_rate": -0.05
+  }
+}

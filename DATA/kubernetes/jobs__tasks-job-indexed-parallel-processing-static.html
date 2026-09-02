@@ -1,0 +1,174 @@
+<!--
+title: Indexed Job for Parallel Processing with Static Work Assignment
+source_url: https://kubernetes.io/docs/tasks/job/indexed-parallel-processing-static/
+doc_topic: jobs
+license: CC BY 4.0 - The Kubernetes Authors
+-->
+<h1>Indexed Job for Parallel Processing with Static Work Assignment</h1>
+<h1 data-pagefind-weight="10">Indexed Job for Parallel Processing with Static Work Assignment</h1><div class="feature-state-notice feature-stable"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.24</span></div><p>In this example, you will run a Kubernetes Job that uses multiple parallel
+worker processes.
+Each worker is a different container running in its own Pod. The Pods have an
+<em>index number</em> that the control plane sets automatically, which allows each Pod
+to identify which part of the overall task to work on.</p><p>The pod index is available in the <a aria-label="annotation" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/overview/working-with-objects/annotations" target="_blank" title="A key-value pair that is used to attach arbitrary non-identifying metadata to objects.">annotation</a>
+<code>batch.kubernetes.io/job-completion-index</code> as a string representing its
+decimal value. In order for the containerized task process to obtain this index,
+you can publish the value of the annotation using the <a href="/docs/concepts/workloads/pods/downward-api/">downward API</a>
+mechanism.
+For convenience, the control plane automatically sets the downward API to
+expose the index in the <code>JOB_COMPLETION_INDEX</code> environment variable.</p><p>Here is an overview of the steps in this example:</p><ol><li><strong>Define a Job manifest using indexed completion</strong>.
+The downward API allows you to pass the pod index annotation as an
+environment variable or file to the container.</li><li><strong>Start an <code>Indexed</code> Job based on that manifest</strong>.</li></ol><h2 id="before-you-begin">Before you begin</h2><p>You should already be familiar with the basic,
+non-parallel, use of <a href="/docs/concepts/workloads/controllers/job/">Job</a>.</p><p><p>You need to have a Kubernetes cluster, and the kubectl command-line tool must
+be configured to communicate with your cluster. It is recommended to run this tutorial on a cluster with at least two nodes that are not acting as control plane hosts. If you do not already have a
+cluster, you can create one by using
+<a href="https://minikube.sigs.k8s.io/docs/tutorials/multi_node/">minikube</a>
+or you can use one of these Kubernetes playgrounds:</p><ul><li><a href="https://labs.iximiuz.com/playgrounds?category=kubernetes&amp;filter=all">iximiuz Labs</a></li><li><a href="https://killercoda.com/playgrounds/scenario/kubernetes">Killercoda</a></li><li><a href="https://kodekloud.com/public-playgrounds">KodeKloud</a></li></ul>Your Kubernetes server must be at or later than version v1.21.<p>To check the version, enter <code>kubectl version</code>.</p></p><h2 id="choose-an-approach">Choose an approach</h2><p>To access the work item from the worker program, you have a few options:</p><ol><li>Read the <code>JOB_COMPLETION_INDEX</code> environment variable. The Job
+<a aria-label="controller" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/architecture/controller/" target="_blank" title="A control loop that watches the shared state of the cluster through the apiserver and makes changes attempting to move the current state towards the desired state.">controller</a>
+automatically links this variable to the annotation containing the completion
+index.</li><li>Read a file that contains the completion index.</li><li>Assuming that you can't modify the program, you can wrap it with a script
+that reads the index using any of the methods above and converts it into
+something that the program can use as input.</li></ol><p>For this example, imagine that you chose option 3 and you want to run the
+<a href="https://man7.org/linux/man-pages/man1/rev.1.html">rev</a> utility. This
+program accepts a file as an argument and prints its content reversed.</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">rev data.txt
+</span></span></code></pre></div><p>You'll use the <code>rev</code> tool from the
+<a href="https://hub.docker.com/_/busybox"><code>busybox</code></a> container image.</p><p>As this is only an example, each Pod only does a tiny piece of work (reversing a short
+string). In a real workload you might, for example, create a Job that represents
+the
+task of producing 60 seconds of video based on scene data.
+Each work item in the video rendering Job would be to render a particular
+frame of that video clip. Indexed completion would mean that each Pod in
+the Job knows which frame to render and publish, by counting frames from
+the start of the clip.</p><h2 id="define-an-indexed-job">Define an Indexed Job</h2><p>Here is a sample Job manifest that uses <code>Indexed</code> completion mode:</p><div class="highlight code-sample"><div class="copy-code-icon"><a download="application/job/indexed-job.yaml" href="https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples/application/job/indexed-job.yaml"><code>application/job/indexed-job.yaml</code>
+</a><img class="icon-copycode" onclick='copyCode("application-job-indexed-job-yaml")' src="/images/copycode.svg" title="Copy application/job/indexed-job.yaml to clipboard"/></div><div class="includecode" id="application-job-indexed-job-yaml"><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s1">'indexed-job'</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completions</span><span class="p">:</span><span class="w"> </span><span class="m">5</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">parallelism</span><span class="p">:</span><span class="w"> </span><span class="m">3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completionMode</span><span class="p">:</span><span class="w"> </span><span class="l">Indexed</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">initContainers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s1">'input'</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="s1">'docker.io/library/bash'</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="s2">"bash"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="s2">"-c"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">          items=(foo bar baz qux xyz)
+</span></span></span><span class="line"><span class="cl"><span class="sd">          echo ${items[$JOB_COMPLETION_INDEX]} &gt; /input/data.txt</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">volumeMounts</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l">/input</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">input</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s1">'worker'</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="s1">'docker.io/library/busybox'</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="s2">"rev"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="s2">"/input/data.txt"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">volumeMounts</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l">/input</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">input</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">volumes</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">input</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">emptyDir</span><span class="p">:</span><span class="w"> </span>{}<span class="w">
+</span></span></span></code></pre></div></div></div><p>In the example above, you use the builtin <code>JOB_COMPLETION_INDEX</code> environment
+variable set by the Job controller for all containers. An <a href="/docs/concepts/workloads/pods/init-containers/">init container</a>
+maps the index to a static value and writes it to a file that is shared with the
+container running the worker through an <a href="/docs/concepts/storage/volumes/#emptydir">emptyDir volume</a>.
+Optionally, you can <a href="/docs/tasks/inject-data-application/environment-variable-expose-pod-information/">define your own environment variable through the downward
+API</a>
+to publish the index to containers. You can also choose to load a list of values
+from a <a href="/docs/tasks/configure-pod-container/configure-pod-configmap/">ConfigMap as an environment variable or file</a>.</p><p>Alternatively, you can directly <a href="/docs/tasks/inject-data-application/downward-api-volume-expose-pod-information/#store-pod-fields">use the downward API to pass the annotation
+value as a volume file</a>,
+like shown in the following example:</p><div class="highlight code-sample"><div class="copy-code-icon"><a download="application/job/indexed-job-vol.yaml" href="https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples/application/job/indexed-job-vol.yaml"><code>application/job/indexed-job-vol.yaml</code>
+</a><img class="icon-copycode" onclick='copyCode("application-job-indexed-job-vol-yaml")' src="/images/copycode.svg" title="Copy application/job/indexed-job-vol.yaml to clipboard"/></div><div class="includecode" id="application-job-indexed-job-vol-yaml"><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s1">'indexed-job'</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completions</span><span class="p">:</span><span class="w"> </span><span class="m">5</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">parallelism</span><span class="p">:</span><span class="w"> </span><span class="m">3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completionMode</span><span class="p">:</span><span class="w"> </span><span class="l">Indexed</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s1">'worker'</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="s1">'docker.io/library/busybox'</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="s2">"rev"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="s2">"/input/data.txt"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">volumeMounts</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="nt">mountPath</span><span class="p">:</span><span class="w"> </span><span class="l">/input</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">input</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">volumes</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">input</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">downwardAPI</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">items</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span>- <span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="s2">"data.txt"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="nt">fieldRef</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">              </span><span class="nt">fieldPath</span><span class="p">:</span><span class="w"> </span><span class="l">metadata.annotations['batch.kubernetes.io/job-completion-index']</span></span></span></code></pre></div></div></div><h2 id="running-the-job">Running the Job</h2><p>Now run the Job:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="c1"># This uses the first approach (relying on $JOB_COMPLETION_INDEX)</span>
+</span></span><span class="line"><span class="cl">kubectl apply -f https://kubernetes.io/examples/application/job/indexed-job.yaml
+</span></span></code></pre></div><p>When you create this Job, the control plane creates a series of Pods, one for each index you specified. The value of <code>.spec.parallelism</code> determines how many can run at once whereas <code>.spec.completions</code> determines how many Pods the Job creates in total.</p><p>Because <code>.spec.parallelism</code> is less than <code>.spec.completions</code>, the control plane waits for some of the first Pods to complete before starting more of them.</p><p>You can wait for the Job to succeed, with a timeout:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="c1"># The check for condition name is case insensitive</span>
+</span></span><span class="line"><span class="cl">kubectl <span class="nb">wait</span> --for<span class="o">=</span><span class="nv">condition</span><span class="o">=</span><span class="nb">complete</span> --timeout<span class="o">=</span>300s job/indexed-job
+</span></span></code></pre></div><p>Now, describe the Job and check that it was successful.</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl describe jobs/indexed-job
+</span></span></code></pre></div><p>The output is similar to:</p><pre tabindex="0"><code>Name:              indexed-job
+Namespace:         default
+Selector:          controller-uid=bf865e04-0b67-483b-9a90-74cfc4c3e756
+Labels:            controller-uid=bf865e04-0b67-483b-9a90-74cfc4c3e756
+                   job-name=indexed-job
+Annotations:       &lt;none&gt;
+Parallelism:       3
+Completions:       5
+Start Time:        Thu, 11 Mar 2021 15:47:34 +0000
+Pods Statuses:     2 Running / 3 Succeeded / 0 Failed
+Completed Indexes: 0-2
+Pod Template:
+  Labels:  controller-uid=bf865e04-0b67-483b-9a90-74cfc4c3e756
+           job-name=indexed-job
+  Init Containers:
+   input:
+    Image:      docker.io/library/bash
+    Port:       &lt;none&gt;
+    Host Port:  &lt;none&gt;
+    Command:
+      bash
+      -c
+      items=(foo bar baz qux xyz)
+      echo ${items[$JOB_COMPLETION_INDEX]} &gt; /input/data.txt
+
+    Environment:  &lt;none&gt;
+    Mounts:
+      /input from input (rw)
+  Containers:
+   worker:
+    Image:      docker.io/library/busybox
+    Port:       &lt;none&gt;
+    Host Port:  &lt;none&gt;
+    Command:
+      rev
+      /input/data.txt
+    Environment:  &lt;none&gt;
+    Mounts:
+      /input from input (rw)
+  Volumes:
+   input:
+    Type:       EmptyDir (a temporary directory that shares a pod's lifetime)
+    Medium:
+    SizeLimit:  &lt;unset&gt;
+Events:
+  Type    Reason            Age   From            Message
+  ----    ------            ----  ----            -------
+  Normal  SuccessfulCreate  4s    job-controller  Created pod: indexed-job-njkjj
+  Normal  SuccessfulCreate  4s    job-controller  Created pod: indexed-job-9kd4h
+  Normal  SuccessfulCreate  4s    job-controller  Created pod: indexed-job-qjwsz
+  Normal  SuccessfulCreate  1s    job-controller  Created pod: indexed-job-fdhq5
+  Normal  SuccessfulCreate  1s    job-controller  Created pod: indexed-job-ncslj
+</code></pre><p>In this example, you run the Job with custom values for each index. You can
+inspect the output of one of the pods:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl logs indexed-job-fdhq5 <span class="c1"># Change this to match the name of a Pod from that Job</span>
+</span></span></code></pre></div><p>The output is similar to:</p><pre tabindex="0"><code>xuq
+</code></pre><div class="td-page-meta__lastmod">Last modified August 24, 2023 at 6:38 PM PST: <a href="https://github.com/kubernetes/website/commit/e8b136c3b3e6fb96580f889ed3260a0918e99896">Use code_sample shortcode instead of code shortcode (e8b136c3b3)</a></div>

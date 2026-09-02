@@ -1,0 +1,77 @@
+<!--
+title: Debug Pods
+source_url: https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/
+doc_topic: operations
+license: CC BY 4.0 - The Kubernetes Authors
+-->
+<h1>Debug Pods</h1>
+<h1 data-pagefind-weight="10">Debug Pods</h1><p>This guide is to help users debug applications that are deployed into Kubernetes
+and not behaving correctly. This is <em>not</em> a guide for people who want to debug their cluster.
+For that you should check out <a href="/docs/tasks/debug/debug-cluster/">this guide</a>.</p><h2 id="diagnosing-the-problem">Diagnosing the problem</h2><p>The first step in troubleshooting is triage. What is the problem?
+Is it your Pods, your Replication Controller or your Service?</p><ul><li><a href="#debugging-pods">Debugging Pods</a></li><li><a href="#debugging-replication-controllers">Debugging Replication Controllers</a></li><li><a href="#debugging-services">Debugging Services</a></li></ul><h3 id="debugging-pods">Debugging Pods</h3><p>The first step in debugging a Pod is taking a look at it. Check the current
+state of the Pod and recent events with the following command:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl describe pods <span class="si">${</span><span class="nv">POD_NAME</span><span class="si">}</span>
+</span></span></code></pre></div><p>Look at the state of the containers in the pod. Are they all <code>Running</code>?
+Have there been recent restarts?</p><p>Continue debugging depending on the state of the pods.</p><h4 id="my-pod-stays-pending">My pod stays pending</h4><p>If a Pod is stuck in <code>Pending</code> it means that it can not be scheduled onto a node.
+Generally this is because there are insufficient resources of one type or another
+that prevent scheduling. Look at the output of the <code>kubectl describe ...</code> command above.
+There should be messages from the scheduler about why it can not schedule your pod.
+Reasons include:</p><ul><li><p><strong>You don't have enough resources</strong>: You may have exhausted the supply of CPU
+or Memory in your cluster, in this case you need to delete Pods, adjust resource
+requests, or add new nodes to your cluster. See <a href="/docs/concepts/configuration/manage-resources-containers/">Compute Resources document</a>
+for more information.</p></li><li><p><strong>You are using <code>hostPort</code></strong>: When you bind a Pod to a <code>hostPort</code> there are a
+limited number of places that pod can be scheduled. In most cases, <code>hostPort</code>
+is unnecessary, try using a Service object to expose your Pod. If you do require
+<code>hostPort</code> then you can only schedule as many Pods as there are nodes in your Kubernetes cluster.</p></li></ul><h4 id="my-pod-stays-waiting">My pod stays waiting</h4><p>If a Pod is stuck in the <code>Waiting</code> state, then it has been scheduled to a worker node,
+but it can't run on that machine. Again, the information from <code>kubectl describe ...</code>
+should be informative. The most common cause of <code>Waiting</code> pods is a failure to pull the image.
+There are three things to check:</p><ul><li>Make sure that you have the name of the image correct.</li><li>Have you pushed the image to the registry?</li><li>Try to manually pull the image to see if the image can be pulled. For example,
+if you use Docker on your PC, run <code>docker pull &lt;image&gt;</code>.</li></ul><h4 id="my-pod-stays-terminating">My pod stays terminating</h4><p>If a Pod is stuck in the <code>Terminating</code> state, it means that a deletion has been
+issued for the Pod, but the control plane is unable to delete the Pod object.</p><p>This typically happens if the Pod has a <a href="/docs/concepts/overview/working-with-objects/finalizers/">finalizer</a>
+and there is an <a href="/docs/reference/access-authn-authz/extensible-admission-controllers/">admission webhook</a>
+installed in the cluster that prevents the control plane from removing the
+finalizer.</p><p>To identify this scenario, check if your cluster has any
+ValidatingWebhookConfiguration or MutatingWebhookConfiguration that target
+<code>UPDATE</code> operations for <code>pods</code> resources.</p><p>If the webhook is provided by a third-party:</p><ul><li>Make sure you are using the latest version.</li><li>Disable the webhook for <code>UPDATE</code> operations.</li><li>Report an issue with the corresponding provider.</li></ul><p>If you are the author of the webhook:</p><ul><li>For a mutating webhook, make sure it never changes immutable fields on
+<code>UPDATE</code> operations. For example, changes to containers are usually not allowed.</li><li>For a validating webhook, make sure that your validation policies only apply
+to new changes. In other words, you should allow Pods with existing violations
+to pass validation. This allows Pods that were created before the validating
+webhook was installed to continue running.</li></ul><h4 id="my-pod-is-crashing-or-otherwise-unhealthy">My pod is crashing or otherwise unhealthy</h4><p>Once your pod has been scheduled, the methods described in
+<a href="/docs/tasks/debug/debug-application/debug-running-pod/">Debug Running Pods</a>
+are available for debugging.</p><h4 id="my-pod-is-running-but-not-doing-what-i-told-it-to-do">My pod is running but not doing what I told it to do</h4><p>If your pod is not behaving as you expected, it may be that there was an error in your
+pod description (e.g. <code>mypod.yaml</code> file on your local machine), and that the error
+was silently ignored when you created the pod. Often a section of the pod description
+is nested incorrectly, or a key name is typed incorrectly, and so the key is ignored.
+For example, if you misspelled <code>command</code> as <code>commnd</code> then the pod will be created but
+will not use the command line you intended it to use.</p><p>The first thing to do is to delete your pod and try creating it again with the <code>--validate</code> option.
+For example, run <code>kubectl apply --validate -f mypod.yaml</code>.
+If you misspelled <code>command</code> as <code>commnd</code> then will give an error like this:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">I0805 10:43:25.129850   <span class="m">46757</span> schema.go:126<span class="o">]</span> unknown field: commnd
+</span></span><span class="line"><span class="cl">I0805 10:43:25.129973   <span class="m">46757</span> schema.go:129<span class="o">]</span> this may be a <span class="nb">false</span> alarm, see https://github.com/kubernetes/kubernetes/issues/6842
+</span></span><span class="line"><span class="cl">pods/mypod
+</span></span></code></pre></div><p>The next thing to check is whether the pod on the apiserver
+matches the pod you meant to create (e.g. in a yaml file on your local machine).
+For example, run <code>kubectl get pods/mypod -o yaml &gt; mypod-on-apiserver.yaml</code> and then
+manually compare the original pod description, <code>mypod.yaml</code> with the one you got
+back from apiserver, <code>mypod-on-apiserver.yaml</code>. There will typically be some
+lines on the "apiserver" version that are not on the original version. This is
+expected. However, if there are lines on the original that are not on the apiserver
+version, then this may indicate a problem with your pod spec.</p><h3 id="debugging-replication-controllers">Debugging Replication Controllers</h3><p>Replication controllers are fairly straightforward. They can either create Pods or they can't.
+If they can't create pods, then please refer to the
+<a href="#debugging-pods">instructions above</a> to debug your pods.</p><p>You can also use <code>kubectl describe rc ${CONTROLLER_NAME}</code> to introspect events
+related to the replication controller.</p><h3 id="debugging-services">Debugging Services</h3><p>Services provide load balancing across a set of pods. There are several common problems that can make Services
+not work properly. The following instructions should help debug Service problems.</p><p>First, verify that there are endpoints for the service. For every Service object,
+the apiserver makes one or more <code>EndpointSlice</code> resources available.</p><p>You can view these resources with:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl get endpointslices -l kubernetes.io/service-name<span class="o">=</span><span class="si">${</span><span class="nv">SERVICE_NAME</span><span class="si">}</span>
+</span></span></code></pre></div><p>Make sure that the endpoints in the EndpointSlices match up with the number of pods that you expect to be members of your service.
+For example, if your Service is for an nginx container with 3 replicas, you would expect to see three different
+IP addresses in the Service's endpoint slices.</p><h4 id="my-service-is-missing-endpoints">My service is missing endpoints</h4><p>If you are missing endpoints, try listing pods using the labels that Service uses.
+Imagine that you have a Service where the labels are:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nn">...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="nt">selector</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">     </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">nginx</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">     </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l">frontend</span><span class="w">
+</span></span></span></code></pre></div><p>You can use:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl get pods --selector<span class="o">=</span><span class="nv">name</span><span class="o">=</span>nginx,type<span class="o">=</span>frontend
+</span></span></code></pre></div><p>to list pods that match this selector. Verify that the list matches the Pods that you expect to provide your Service.
+Verify that the pod's <code>containerPort</code> matches up with the Service's <code>targetPort</code></p><h4 id="network-traffic-is-not-forwarded">Network traffic is not forwarded</h4><p>Please see <a href="/docs/tasks/debug/debug-application/debug-service/">debugging service</a> for more information.</p><h2 id="what-s-next">What's next</h2><p>If none of the above solves your problem, follow the instructions in
+<a href="/docs/tasks/debug/debug-application/debug-service/">Debugging Service document</a>
+to make sure that your <code>Service</code> is running, has <code>Endpoints</code>, and your <code>Pods</code> are
+actually serving; you have DNS working, iptables rules installed, and kube-proxy
+does not seem to be misbehaving.</p><p>You may also visit <a href="/docs/tasks/debug/">troubleshooting document</a> for more information.</p><div class="td-page-meta__lastmod">Last modified April 09, 2025 at 5:08 AM PST: <a href="https://github.com/kubernetes/website/commit/649bda2cbda386043d3e2af07fcb84806243c828">Update docs for deprecation of Endpoints API (#49831) (649bda2cbd)</a></div>

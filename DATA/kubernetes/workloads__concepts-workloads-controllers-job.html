@@ -1,0 +1,791 @@
+<!--
+title: Jobs
+source_url: https://kubernetes.io/docs/concepts/workloads/controllers/job/
+doc_topic: workloads
+license: CC BY 4.0 - The Kubernetes Authors
+-->
+<h1>Jobs</h1>
+<h1 data-pagefind-weight="10">Jobs</h1><div class="lead">Jobs represent one-off tasks that run to completion and then stop.</div><p>A Job creates one or more Pods and will continue to retry execution of the Pods until a specified number of them successfully terminate.
+As pods successfully complete, the Job tracks the successful completions. When a specified number
+of successful completions is reached, the task (ie, Job) is complete. Deleting a Job will clean up
+the Pods it created. Suspending a Job will delete its active Pods until the Job
+is resumed again.</p><p>A simple case is to create one Job object in order to reliably run one Pod to completion.
+The Job object will start a new Pod if the first Pod fails or is deleted (for example
+due to a node hardware failure or a node reboot).</p><p>You can also use a Job to run multiple Pods in parallel.</p><p>If you want to run a Job (either a single task, or several in parallel) on a schedule,
+see <a href="/docs/concepts/workloads/controllers/cron-jobs/">CronJob</a>.</p><h2 id="running-an-example-job">Running an example Job</h2><p>Here is an example Job config. It computes π to 2000 places and prints it out.
+It takes around 10s to complete.</p><div class="highlight code-sample"><div class="copy-code-icon"><a download="controllers/job.yaml" href="https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples/controllers/job.yaml"><code>controllers/job.yaml</code>
+</a><img class="icon-copycode" onclick='copyCode("controllers-job-yaml")' src="/images/copycode.svg" title="Copy controllers/job.yaml to clipboard"/></div><div class="includecode" id="controllers-job-yaml"><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">pi</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">pi</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">perl:5.34.0</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"perl"</span><span class="p">,</span><span class="w">  </span><span class="s2">"-Mbignum=bpi"</span><span class="p">,</span><span class="w"> </span><span class="s2">"-wle"</span><span class="p">,</span><span class="w"> </span><span class="s2">"print bpi(2000)"</span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">backoffLimit</span><span class="p">:</span><span class="w"> </span><span class="m">4</span><span class="w">
+</span></span></span></code></pre></div></div></div><p>You can run the example with this command:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl apply -f https://kubernetes.io/examples/controllers/job.yaml
+</span></span></code></pre></div><p>The output is similar to this:</p><pre tabindex="0"><code>job.batch/pi created
+</code></pre><p>Check on the status of the Job with <code>kubectl</code>:</p><ul class="nav nav-tabs" id="tabs-check-status-of-job" role="tablist"><li class="nav-item"><button aria-controls="tabs-check-status-of-job-0" aria-selected="true" class="nav-link active" data-bs-target="#tabs-check-status-of-job-0" data-bs-toggle="tab" id="tabs-check-status-of-job-0-tab" role="tab">
+kubectl describe job pi</button><li class="nav-item"><button aria-controls="tabs-check-status-of-job-1" aria-selected="false" class="nav-link" data-bs-target="#tabs-check-status-of-job-1" data-bs-toggle="tab" id="tabs-check-status-of-job-1-tab" role="tab">
+kubectl get job pi -o yaml</button></li></li></ul><div class="tab-content" id="tabs-check-status-of-job-content"><div aria-labelledby="tabs-check-status-of-job-0-tab" class="tab-body tab-pane fadeshow active" id="tabs-check-status-of-job-0" role="tabpanel" tabindex="check-status-of-job"><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">Name:           pi
+</span></span><span class="line"><span class="cl">Namespace:      default
+</span></span><span class="line"><span class="cl">Selector:       batch.kubernetes.io/controller-uid<span class="o">=</span>c9948307-e56d-4b5d-8302-ae2d7b7da67c
+</span></span><span class="line"><span class="cl">Labels:         batch.kubernetes.io/controller-uid<span class="o">=</span>c9948307-e56d-4b5d-8302-ae2d7b7da67c
+</span></span><span class="line"><span class="cl">                batch.kubernetes.io/job-name<span class="o">=</span>pi
+</span></span><span class="line"><span class="cl">                ...
+</span></span><span class="line"><span class="cl">Annotations:    batch.kubernetes.io/job-tracking: <span class="s2">""</span>
+</span></span><span class="line"><span class="cl">Parallelism:    <span class="m">1</span>
+</span></span><span class="line"><span class="cl">Completions:    <span class="m">1</span>
+</span></span><span class="line"><span class="cl">Start Time:     Mon, <span class="m">02</span> Dec <span class="m">2019</span> 15:20:11 +0200
+</span></span><span class="line"><span class="cl">Completed At:   Mon, <span class="m">02</span> Dec <span class="m">2019</span> 15:21:16 +0200
+</span></span><span class="line"><span class="cl">Duration:       65s
+</span></span><span class="line"><span class="cl">Pods Statuses:  <span class="m">0</span> Running / <span class="m">1</span> Succeeded / <span class="m">0</span> Failed
+</span></span><span class="line"><span class="cl">Pod Template:
+</span></span><span class="line"><span class="cl">  Labels:  batch.kubernetes.io/controller-uid<span class="o">=</span>c9948307-e56d-4b5d-8302-ae2d7b7da67c
+</span></span><span class="line"><span class="cl">           batch.kubernetes.io/job-name<span class="o">=</span>pi
+</span></span><span class="line"><span class="cl">  Containers:
+</span></span><span class="line"><span class="cl">   pi:
+</span></span><span class="line"><span class="cl">    Image:      perl:5.34.0
+</span></span><span class="line"><span class="cl">    Port:       &lt;none&gt;
+</span></span><span class="line"><span class="cl">    Host Port:  &lt;none&gt;
+</span></span><span class="line"><span class="cl">    Command:
+</span></span><span class="line"><span class="cl">      perl
+</span></span><span class="line"><span class="cl">      -Mbignum<span class="o">=</span>bpi
+</span></span><span class="line"><span class="cl">      -wle
+</span></span><span class="line"><span class="cl">      print bpi<span class="o">(</span>2000<span class="o">)</span>
+</span></span><span class="line"><span class="cl">    Environment:  &lt;none&gt;
+</span></span><span class="line"><span class="cl">    Mounts:       &lt;none&gt;
+</span></span><span class="line"><span class="cl">  Volumes:        &lt;none&gt;
+</span></span><span class="line"><span class="cl">Events:
+</span></span><span class="line"><span class="cl">  Type    Reason            Age   From            Message
+</span></span><span class="line"><span class="cl">  ----    ------            ----  ----            -------
+</span></span><span class="line"><span class="cl">  Normal  SuccessfulCreate  21s   job-controller  Created pod: pi-xf9p4
+</span></span><span class="line"><span class="cl">  Normal  Completed         18s   job-controller  Job completed
+</span></span></code></pre></div></div><div aria-labelledby="tabs-check-status-of-job-1-tab" class="tab-body tab-pane fade" id="tabs-check-status-of-job-1" role="tabpanel" tabindex="check-status-of-job"><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">apiVersion: batch/v1
+</span></span><span class="line"><span class="cl">kind: Job
+</span></span><span class="line"><span class="cl">metadata:
+</span></span><span class="line"><span class="cl">  annotations: batch.kubernetes.io/job-tracking: <span class="s2">""</span>
+</span></span><span class="line"><span class="cl">             ...  
+</span></span><span class="line"><span class="cl">  creationTimestamp: <span class="s2">"2022-11-10T17:53:53Z"</span>
+</span></span><span class="line"><span class="cl">  generation: <span class="m">1</span>
+</span></span><span class="line"><span class="cl">  labels:
+</span></span><span class="line"><span class="cl">    batch.kubernetes.io/controller-uid: 863452e6-270d-420e-9b94-53a54146c223
+</span></span><span class="line"><span class="cl">    batch.kubernetes.io/job-name: pi
+</span></span><span class="line"><span class="cl">  name: pi
+</span></span><span class="line"><span class="cl">  namespace: default
+</span></span><span class="line"><span class="cl">  resourceVersion: <span class="s2">"4751"</span>
+</span></span><span class="line"><span class="cl">  uid: 204fb678-040b-497f-9266-35ffa8716d14
+</span></span><span class="line"><span class="cl">spec:
+</span></span><span class="line"><span class="cl">  backoffLimit: <span class="m">4</span>
+</span></span><span class="line"><span class="cl">  completionMode: NonIndexed
+</span></span><span class="line"><span class="cl">  completions: <span class="m">1</span>
+</span></span><span class="line"><span class="cl">  parallelism: <span class="m">1</span>
+</span></span><span class="line"><span class="cl">  selector:
+</span></span><span class="line"><span class="cl">    matchLabels:
+</span></span><span class="line"><span class="cl">      batch.kubernetes.io/controller-uid: 863452e6-270d-420e-9b94-53a54146c223
+</span></span><span class="line"><span class="cl">  suspend: <span class="nb">false</span>
+</span></span><span class="line"><span class="cl">  template:
+</span></span><span class="line"><span class="cl">    metadata:
+</span></span><span class="line"><span class="cl">      creationTimestamp: null
+</span></span><span class="line"><span class="cl">      labels:
+</span></span><span class="line"><span class="cl">        batch.kubernetes.io/controller-uid: 863452e6-270d-420e-9b94-53a54146c223
+</span></span><span class="line"><span class="cl">        batch.kubernetes.io/job-name: pi
+</span></span><span class="line"><span class="cl">    spec:
+</span></span><span class="line"><span class="cl">      containers:
+</span></span><span class="line"><span class="cl">      - command:
+</span></span><span class="line"><span class="cl">        - perl
+</span></span><span class="line"><span class="cl">        - -Mbignum<span class="o">=</span>bpi
+</span></span><span class="line"><span class="cl">        - -wle
+</span></span><span class="line"><span class="cl">        - print bpi<span class="o">(</span>2000<span class="o">)</span>
+</span></span><span class="line"><span class="cl">        image: perl:5.34.0
+</span></span><span class="line"><span class="cl">        imagePullPolicy: IfNotPresent
+</span></span><span class="line"><span class="cl">        name: pi
+</span></span><span class="line"><span class="cl">        resources: <span class="o">{}</span>
+</span></span><span class="line"><span class="cl">        terminationMessagePath: /dev/termination-log
+</span></span><span class="line"><span class="cl">        terminationMessagePolicy: File
+</span></span><span class="line"><span class="cl">      dnsPolicy: ClusterFirst
+</span></span><span class="line"><span class="cl">      restartPolicy: Never
+</span></span><span class="line"><span class="cl">      schedulerName: default-scheduler
+</span></span><span class="line"><span class="cl">      securityContext: <span class="o">{}</span>
+</span></span><span class="line"><span class="cl">      terminationGracePeriodSeconds: <span class="m">30</span>
+</span></span><span class="line"><span class="cl">status:
+</span></span><span class="line"><span class="cl">  active: <span class="m">1</span>
+</span></span><span class="line"><span class="cl">  ready: <span class="m">0</span>
+</span></span><span class="line"><span class="cl">  startTime: <span class="s2">"2022-11-10T17:53:57Z"</span>
+</span></span><span class="line"><span class="cl">  uncountedTerminatedPods: <span class="o">{}</span>
+</span></span></code></pre></div></div></div><p>To view completed Pods of a Job, use <code>kubectl get pods</code>.</p><p>To list all the Pods that belong to a Job in a machine readable form, you can use a command like this:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl"><span class="nv">pods</span><span class="o">=</span><span class="k">$(</span>kubectl get pods --selector<span class="o">=</span>batch.kubernetes.io/job-name<span class="o">=</span>pi --output<span class="o">=</span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.items[*].metadata.name}'</span><span class="k">)</span>
+</span></span><span class="line"><span class="cl"><span class="nb">echo</span> <span class="nv">$pods</span>
+</span></span></code></pre></div><p>The output is similar to this:</p><pre tabindex="0"><code>pi-5rwd7
+</code></pre><p>Here, the selector is the same as the selector for the Job. The <code>--output=jsonpath</code> option specifies an expression
+with the name from each Pod in the returned list.</p><p>View the standard output of one of the pods:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl logs <span class="nv">$pods</span>
+</span></span></code></pre></div><p>Another way to view the logs of a Job:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl logs jobs/pi
+</span></span></code></pre></div><p>The output is similar to this:</p><pre tabindex="0"><code>3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679821480865132823066470938446095505822317253594081284811174502841027019385211055596446229489549303819644288109756659334461284756482337867831652712019091456485669234603486104543266482133936072602491412737245870066063155881748815209209628292540917153643678925903600113305305488204665213841469519415116094330572703657595919530921861173819326117931051185480744623799627495673518857527248912279381830119491298336733624406566430860213949463952247371907021798609437027705392171762931767523846748184676694051320005681271452635608277857713427577896091736371787214684409012249534301465495853710507922796892589235420199561121290219608640344181598136297747713099605187072113499999983729780499510597317328160963185950244594553469083026425223082533446850352619311881710100031378387528865875332083814206171776691473035982534904287554687311595628638823537875937519577818577805321712268066130019278766111959092164201989380952572010654858632788659361533818279682303019520353018529689957736225994138912497217752834791315155748572424541506959508295331168617278558890750983817546374649393192550604009277016711390098488240128583616035637076601047101819429555961989467678374494482553797747268471040475346462080466842590694912933136770289891521047521620569660240580381501935112533824300355876402474964732639141992726042699227967823547816360093417216412199245863150302861829745557067498385054945885869269956909272107975093029553211653449872027559602364806654991198818347977535663698074265425278625518184175746728909777727938000816470600161452491921732172147723501414419735685481613611573525521334757418494684385233239073941433345477624168625189835694855620992192221842725502542568876717904946016534668049886272327917860857843838279679766814541009538837863609506800642251252051173929848960841284886269456042419652850222106611863067442786220391949450471237137869609563643719172874677646575739624138908658326459958133904780275901
+</code></pre><h2 id="writing-a-job-spec">Writing a Job spec</h2><p>As with all other Kubernetes config, a Job needs <code>apiVersion</code>, <code>kind</code>, and <code>metadata</code> fields.</p><p>When the control plane creates new Pods for a Job, the <code>.metadata.name</code> of the
+Job is part of the basis for naming those Pods. The name of a Job must be a valid
+<a href="/docs/concepts/overview/working-with-objects/names/#dns-subdomain-names">DNS subdomain</a>
+value, but this can produce unexpected results for the Pod hostnames. For best compatibility,
+the name should follow the more restrictive rules for a
+<a href="/docs/concepts/overview/working-with-objects/names/#dns-label-names">DNS label</a>.
+Even when the name is a DNS subdomain, the name must be no longer than 63
+characters.</p><p>A Job also needs a <a href="https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status"><code>.spec</code> section</a>.</p><h3 id="job-labels">Job Labels</h3><p>Job labels will have <code>batch.kubernetes.io/</code> prefix for <code>job-name</code> and <code>controller-uid</code>.</p><h3 id="pod-template">Pod Template</h3><p>The <code>.spec.template</code> is the only required field of the <code>.spec</code>.</p><p>The <code>.spec.template</code> is a <a href="/docs/concepts/workloads/pods/#pod-templates">pod template</a>.
+It has exactly the same schema as a <a aria-label="Pod" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/workloads/pods/" target="_blank" title="A Pod represents a set of running containers in your cluster.">Pod</a>,
+except it is nested and does not have an <code>apiVersion</code> or <code>kind</code>.</p><p>In addition to required fields for a Pod, a pod template in a Job must specify appropriate
+labels (see <a href="#pod-selector">pod selector</a>) and an appropriate restart policy.</p><p>Only a <a href="/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy"><code>RestartPolicy</code></a>
+equal to <code>Never</code> or <code>OnFailure</code> is allowed.</p><h3 id="pod-selector">Pod selector</h3><p>The <code>.spec.selector</code> field is optional. In almost all cases you should not specify it.
+See section <a href="#specifying-your-own-pod-selector">specifying your own pod selector</a>.</p><h3 id="parallel-jobs">Parallel execution for Jobs</h3><p>There are three main types of task suitable to run as a Job:</p><ol><li>Non-parallel Jobs<ul><li>normally, only one Pod is started, unless the Pod fails.</li><li>the Job is complete as soon as its Pod terminates successfully.</li></ul></li><li>Parallel Jobs with a <em>fixed completion count</em>:<ul><li>specify a non-zero positive value for <code>.spec.completions</code>.</li><li>the Job represents the overall task, and is complete when there are <code>.spec.completions</code> successful Pods.</li><li>when using <code>.spec.completionMode="Indexed"</code>, each Pod gets a different index in the range 0 to <code>.spec.completions-1</code>.</li></ul></li><li>Parallel Jobs with a <em>work queue</em>:<ul><li>do not specify <code>.spec.completions</code>, default to <code>.spec.parallelism</code>.</li><li>the Pods must coordinate amongst themselves or an external service to determine
+what each should work on. For example, a Pod might fetch a batch of up to N items from the work queue.</li><li>each Pod is independently capable of determining whether or not all its peers are done,
+and thus that the entire Job is done.</li><li>when <em>any</em> Pod from the Job terminates with success, no new Pods are created.</li><li>once at least one Pod has terminated with success and all Pods are terminated,
+then the Job is completed with success.</li><li>once any Pod has exited with success, no other Pod should still be doing any work
+for this task or writing any output. They should all be in the process of exiting.</li></ul></li></ol><p>For a <em>non-parallel</em> Job, you can leave both <code>.spec.completions</code> and <code>.spec.parallelism</code> unset.
+When both are unset, both are defaulted to 1.</p><p>For a <em>fixed completion count</em> Job, you should set <code>.spec.completions</code> to the number of completions needed.
+You can set <code>.spec.parallelism</code>, or leave it unset and it will default to 1.</p><p>For a <em>work queue</em> Job, you must leave <code>.spec.completions</code> unset, and set <code>.spec.parallelism</code> to
+a non-negative integer.</p><p>For more information about how to make use of the different types of job,
+see the <a href="#job-patterns">job patterns</a> section.</p><h4 id="controlling-parallelism">Controlling parallelism</h4><p>The requested parallelism (<code>.spec.parallelism</code>) can be set to any non-negative value.
+If it is unspecified, it defaults to 1.
+If it is specified as 0, then the Job is effectively paused until it is increased.</p><p>Actual parallelism (number of pods running at any instant) may be more or less than requested
+parallelism, for a variety of reasons:</p><ul><li>For <em>fixed completion count</em> Jobs, the actual number of pods running in parallel will not exceed the number of
+remaining completions. Higher values of <code>.spec.parallelism</code> are effectively ignored.</li><li>For <em>work queue</em> Jobs, no new Pods are started after any Pod has succeeded -- remaining Pods are allowed to complete, however.</li><li>If the Job <a aria-label="Controller" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/architecture/controller/" target="_blank" title="A control loop that watches the shared state of the cluster through the apiserver and makes changes attempting to move the current state towards the desired state.">Controller</a> has not had time to react.</li><li>If the Job controller failed to create Pods for any reason (lack of <code>ResourceQuota</code>, lack of permission, etc.),
+then there may be fewer pods than requested.</li><li>The Job controller may throttle new Pod creation due to excessive previous pod failures in the same Job.</li><li>When a Pod is gracefully shut down, it takes time to stop.</li></ul><h3 id="completion-mode">Completion mode</h3><div class="feature-state-notice feature-stable"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.24</span></div><p>Jobs with <em>fixed completion count</em> - that is, jobs that have non null
+<code>.spec.completions</code> - can have a completion mode that is specified in <code>.spec.completionMode</code>:</p><ul><li><p><code>NonIndexed</code> (default): the Job is considered complete when there have been
+<code>.spec.completions</code> successfully completed Pods. In other words, each Pod
+completion is homologous to each other. Note that Jobs that have null
+<code>.spec.completions</code> are implicitly <code>NonIndexed</code>.</p></li><li><p><code>Indexed</code>: the Pods of a Job get an associated completion index from 0 to
+<code>.spec.completions-1</code>. The index is available through four mechanisms:</p><ul><li>The Pod annotation <code>batch.kubernetes.io/job-completion-index</code>.</li><li>The Pod label <code>batch.kubernetes.io/job-completion-index</code> (for v1.28 and later). Note
+the feature gate <code>PodIndexLabel</code> must be enabled to use this label, and it is enabled
+by default.</li><li>As part of the Pod hostname, following the pattern <code>$(job-name)-$(index)</code>.
+When you use an Indexed Job in combination with a
+<a aria-label="Service" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/services-networking/service/" target="_blank" title="A way to expose an application running on a set of Pods as a network service.">Service</a>, Pods within the Job can use
+the deterministic hostnames to address each other via DNS. For more information about
+how to configure this, see <a href="/docs/tasks/job/job-with-pod-to-pod-communication/">Job with Pod-to-Pod Communication</a>.</li><li>From the containerized task, in the environment variable <code>JOB_COMPLETION_INDEX</code>.</li></ul><p>The Job is considered complete when there is one successfully completed Pod
+for each index. For more information about how to use this mode, see
+<a href="/docs/tasks/job/indexed-parallel-processing-static/">Indexed Job for Parallel Processing with Static Work Assignment</a>.</p></li></ul><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>Although rare, more than one Pod could be started for the same index (due to various reasons such as node failures,
+kubelet restarts, or Pod evictions). In this case, only the first Pod that completes successfully will
+count towards the completion count and update the status of the Job. The other Pods that are running
+or completed for the same index will be deleted by the Job controller once they are detected.</div><h2 id="integrate-with-workload-apis">Integrate with Workload APIs</h2><div class="feature-state-notice feature-alpha" title="Feature Gate: WorkloadWithJob"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Alpha</span> since Kubernetes v1.36; disabled by default</span></div><div class="feature-alpha"><details><summary>More information about this feature</summary><p>To use this feature, you (or a cluster administrator) will need to enable the <a href="/docs/reference/command-line-tools-reference/feature-gates/#WorkloadWithJob"><tt>WorkloadWithJob</tt></a> feature gate for all relevant components in your cluster.</p><p>See <a href="/docs/tasks/administer-cluster/configure-feature-gates/">Enable Or Disable Feature Gates</a> for more information.</p></details></div><p>When the <a href="/docs/reference/command-line-tools-reference/feature-gates/"><code>WorkloadWithJob</code></a>
+feature gate is enabled, the Job controller compiles a Job's <code>.spec.scheduling</code>
+configuration into <a href="/docs/concepts/workloads/workload-api/">Workload</a> and
+<a href="/docs/concepts/workloads/podgroup-api/">PodGroup</a> objects (<code>scheduling.k8s.io/v1beta1</code>)
+before it creates any Pods. This lets you express explicit scheduling intent for a Job,
+such as <a href="/docs/concepts/scheduling-eviction/gang-scheduling/">gang scheduling</a> (all Pods
+scheduled together or none), topology co-location, and disruption behavior.</p><p>When you omit <code>.spec.scheduling</code>, the Job defaults to the <code>Basic</code> scheduling
+policy, which preserves the standard pod-by-pod scheduling outcome of an ordinary
+Job. The controller still creates a <code>Workload</code> and <code>PodGroup</code> for every
+eligible Job (including <code>Basic</code> ones), so the observable objects are consistent
+regardless of the policy.</p><h3 id="scheduling-configuration">Scheduling configuration</h3><p>The <code>.spec.scheduling</code> field accepts the following fields:</p><ul><li><code>schedulingPolicy</code>: exactly one of <code>basic</code> or <code>gang</code> must be specified. With <code>gang</code>,
+all Pods must be schedulable together before any of them are bound. An omitted
+<code>gang.minCount</code> defaults to the Job's <code>.spec.parallelism</code>. See
+<a href="/docs/concepts/workloads/workload-api/policies/">PodGroup scheduling policies</a>.</li><li><code>schedulingConstraints</code>:
+<a href="/docs/concepts/workloads/workload-api/topology-aware-scheduling/">topology</a>
+co-location constraints for the Job's Pods.</li><li><code>disruptionMode</code>: whether the Pods are disrupted individually (<code>single</code>) or as a
+group (<code>all</code>). See
+<a href="/docs/concepts/workloads/workload-api/disruption-and-priority/">disruption and priority</a>.</li><li><code>resourceClaims</code>: dynamic resource claims shared across the Job's Pods.</li></ul><p>All <code>.spec.scheduling</code> fields are immutable after the Job is created, except for
+<code>schedulingPolicy.gang.minCount</code>, which you can change to
+<a href="#elastic-indexed-jobs">scale a gang elastically</a>.</p><h3 id="gang-scheduling">Gang scheduling</h3><p>The following Job requests gang scheduling for its 8 Pods, co-located within a
+single zone, and disrupted together:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">distributed-training</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l">training</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">parallelism</span><span class="p">:</span><span class="w"> </span><span class="m">8</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completions</span><span class="p">:</span><span class="w"> </span><span class="m">8</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completionMode</span><span class="p">:</span><span class="w"> </span><span class="l">Indexed</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">scheduling</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">schedulingPolicy</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">gang</span><span class="p">:</span><span class="w"> </span>{}<span class="w">                </span><span class="c"># minCount omitted -&gt; defaults to parallelism (8)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">schedulingConstraints</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">key</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">level</span><span class="p">:</span><span class="w"> </span><span class="l">topology.kubernetes.io/zone</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">disruptionMode</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">all</span><span class="p">:</span><span class="w"> </span>{}<span class="w">                 </span><span class="c"># the entire group is disrupted together</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">trainer</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">training-image:latest</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">resources</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">limits</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span><span class="nt">nvidia.com/gpu</span><span class="p">:</span><span class="w"> </span><span class="m">1</span><span class="w">
+</span></span></span></code></pre></div><p>When the Job controller processes this Job, it:</p><ol><li>Creates a <a href="/docs/concepts/workloads/workload-api/">Workload</a> object in the same
+namespace, containing a <code>podGroupTemplate</code> compiled from <code>.spec.scheduling</code>
+(here, a <a href="/docs/concepts/workloads/workload-api/policies/">gang policy</a> with
+<code>minCount: 8</code>).</li><li>Creates a PodGroup object from that template. The PodGroup is the runtime
+scheduling unit and carries an inline copy of the policy.</li><li>Creates Pods with <code>.spec.schedulingGroup.podGroupName</code> set to the PodGroup's
+name, linking each Pod to its scheduling group.</li></ol><p>The controller discovers these objects through spec references
+(<code>Workload.spec.controllerRef</code> and <code>PodGroup.spec.workloadRef</code>), not by
+name. Objects the controller creates carry an <code>ownerReferences</code> entry pointing to
+the Job, so they are garbage collected when the Job is deleted.</p><h3 id="default-basic-scheduling">Default (Basic) scheduling</h3><p>A Job that omits <code>.spec.scheduling</code> defaults to <code>Basic</code>, which acts as an implicit
+opt-out of gang scheduling. Its Pods schedule the same way as an ordinary Job,
+while a <code>Basic</code> <code>Workload</code> and <code>PodGroup</code> are still created:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">batch-processor</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">namespace</span><span class="p">:</span><span class="w"> </span><span class="l">batch</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">parallelism</span><span class="p">:</span><span class="w"> </span><span class="m">10</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completions</span><span class="p">:</span><span class="w"> </span><span class="m">10</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="c"># .spec.scheduling omitted -&gt; defaults to Basic scheduling.</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">processor</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">processor-image:v1</span><span class="w">
+</span></span></span></code></pre></div><h3 id="higher-level-controllers">Higher-level controllers</h3><p>For a standalone Job, the Job controller owns both the <code>Workload</code> and the
+<code>PodGroup</code>. When a Job instead carries an <code>ownerReference</code> to a parent controller
+that compiles the <code>Workload</code> (for example, <code>JobSet</code>), the Job controller defers
+<code>Workload</code> ownership to that parent. Whether the Job controller still creates the
+runtime <code>PodGroup</code> depends on what the parent delegates:</p><ul><li>If the parent sets the <code>scheduling.k8s.io/group-template-name</code> annotation on the
+Job, the Job controller creates and owns the <code>PodGroup</code>, mapped to the parent's
+named <code>PodGroupTemplate</code>.</li><li>Otherwise, the parent owns both objects and the Job controller creates neither;
+it discovers the existing objects and uses them when creating Pods.</li></ul><p>If a Job's Pod template already has <code>.spec.template.spec.schedulingGroup</code> set, the
+Job controller creates neither object, letting you (or a higher-level controller)
+manage the <code>Workload</code>/<code>PodGroup</code> lifecycle yourself.</p><h3 id="cronjob-behavior">CronJob behavior</h3><p>Jobs created by a <code>CronJob</code> are standalone; the <code>CronJob</code> does not create or manage
+<code>Workload</code> objects. If a <code>CronJob</code>'s <code>jobTemplate</code> sets <code>.spec.scheduling</code>, the Job
+controller creates a separate <code>Workload</code> and <code>PodGroup</code> for each Job instance,
+compiled from that Job's <code>.spec.scheduling</code> (defaulting to <code>Basic</code> when omitted).
+These objects are garbage collected when each Job completes or is deleted.</p><h3 id="workload-integration-limitations">Limitations for Alpha release</h3><ul><li>Each Job maps to exactly one <code>PodGroup</code>; all Pods in the Job share a single
+scheduling policy.</li><li>Only <code>schedulingPolicy.gang.minCount</code> is mutable; all other <code>.spec.scheduling</code>
+fields are immutable after creation.</li><li>Suspended Jobs retain their <code>Workload</code> and <code>PodGroup</code> objects; they are not deleted
+on suspend or recreated on resume.</li></ul><h2 id="handling-pod-and-container-failures">Handling Pod and container failures</h2><p>A container in a Pod may fail for a number of reasons, such as because the process in it exited with
+a non-zero exit code, or the container was killed for exceeding a memory limit, etc. If this
+happens, and the <code>.spec.template.spec.restartPolicy = "OnFailure"</code>, then the Pod stays
+on the node, but the container is re-run. Therefore, your program needs to handle the case when it is
+restarted locally, or else specify <code>.spec.template.spec.restartPolicy = "Never"</code>.
+See <a href="/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy">pod lifecycle</a> for more information on <code>restartPolicy</code>.</p><p>An entire Pod can also fail, for a number of reasons, such as when the pod is kicked off the node
+(node is upgraded, rebooted, deleted, etc.), or if a container of the Pod fails and the
+<code>.spec.template.spec.restartPolicy = "Never"</code>. When a Pod fails, then the Job controller
+starts a new Pod. This means that your application needs to handle the case when it is restarted in a new
+pod. In particular, it needs to handle temporary files, locks, incomplete output and the like
+caused by previous runs.</p><p>By default, each pod failure is counted towards the <code>.spec.backoffLimit</code> limit,
+see <a href="#pod-backoff-failure-policy">pod backoff failure policy</a>. However, you can
+customize handling of pod failures by setting the Job's <a href="#pod-failure-policy">pod failure policy</a>.</p><p>Additionally, you can choose to count the pod failures independently for each
+index of an <a href="#completion-mode">Indexed</a> Job by setting the <code>.spec.backoffLimitPerIndex</code> field
+(for more information, see <a href="#backoff-limit-per-index">backoff limit per index</a>).</p><p>Note that even if you specify <code>.spec.parallelism = 1</code> and <code>.spec.completions = 1</code> and
+<code>.spec.template.spec.restartPolicy = "Never"</code>, the same program may
+sometimes be started twice.</p><p>If you do specify <code>.spec.parallelism</code> and <code>.spec.completions</code> both greater than 1, then there may be
+multiple pods running at once. Therefore, your pods must also be tolerant of concurrency.</p><p>If you specify the <code>.spec.podFailurePolicy</code> field, the Job controller does not consider a terminating
+Pod (a pod that has a <code>.metadata.deletionTimestamp</code> field set) as a failure until that Pod is
+terminal (its <code>.status.phase</code> is <code>Failed</code> or <code>Succeeded</code>). However, the Job controller
+creates a replacement Pod as soon as the termination becomes apparent. Once the
+pod terminates, the Job controller evaluates <code>.backoffLimit</code> and <code>.podFailurePolicy</code>
+for the relevant Job, taking this now-terminated Pod into consideration.</p><p>If either of these requirements is not satisfied, the Job controller counts
+a terminating Pod as an immediate failure, even if that Pod later terminates
+with <code>phase: "Succeeded"</code>.</p><h3 id="pod-backoff-failure-policy">Pod backoff failure policy</h3><p>There are situations where you want to fail a Job after some amount of retries
+due to a logical error in configuration etc.
+To do so, set <code>.spec.backoffLimit</code> to specify the number of retries before
+considering a Job as failed.</p><p>The <code>.spec.backoffLimit</code> is set by default to 6, unless the
+<a href="#backoff-limit-per-index">backoff limit per index</a> (only Indexed Job) is specified.
+When <code>.spec.backoffLimitPerIndex</code> is specified, then <code>.spec.backoffLimit</code> defaults
+to 2147483647 (MaxInt32).</p><p>Failed Pods associated with the Job are recreated by the Job controller with an
+exponential back-off delay (10s, 20s, 40s ...) capped at six minutes.</p><p>The number of retries is calculated in two ways:</p><ul><li>The number of Pods with <code>.status.phase = "Failed"</code>.</li><li>When using <code>restartPolicy = "OnFailure"</code>, the number of retries in all the
+containers of Pods with <code>.status.phase</code> equal to <code>Pending</code> or <code>Running</code>.</li></ul><p>If either of the calculations reaches the <code>.spec.backoffLimit</code>, the Job is
+considered failed.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>If your Job has <code>restartPolicy = "OnFailure"</code>, keep in mind that your Pod running the job
+will be terminated once the job backoff limit has been reached. This can make debugging
+the Job's executable more difficult. We suggest setting
+<code>restartPolicy = "Never"</code> when debugging the Job or using a logging system to ensure output
+from failed Jobs is not lost inadvertently.</div><h3 id="backoff-limit-per-index">Backoff limit per index</h3><div class="feature-state-notice feature-stable" title="Feature Gate: JobBackoffLimitPerIndex"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.33</span></div><div class="feature-stable"><details><summary>More information about this feature</summary><p>This is a stable feature in Kubernetes, and has been since version v1.33. It was first available in the v1.28 release. You can no longer disable or opt out of this feature or behavior (it is locked); if you explicitly set a value for the associated feature gate <tt>JobBackoffLimitPerIndex</tt>, Kubernetes ignores it but does not report any error.</p></details></div><p>When you run an <a href="#completion-mode">indexed</a> Job, you can choose to handle retries
+for pod failures independently for each index. To do so, set the
+<code>.spec.backoffLimitPerIndex</code> to specify the maximal number of pod failures
+per index.</p><p>When the per-index backoff limit is exceeded for an index, Kubernetes considers the index as failed and adds it to the
+<code>.status.failedIndexes</code> field. The succeeded indexes, those with a successfully
+executed pods, are recorded in the <code>.status.completedIndexes</code> field, regardless of whether you set
+the <code>backoffLimitPerIndex</code> field.</p><p>Note that a failing index does not interrupt execution of other indexes.
+Once all indexes finish for a Job where you specified a backoff limit per index,
+if at least one of those indexes did fail, the Job controller marks the overall
+Job as failed, by setting the Failed condition in the status. The Job gets
+marked as failed even if some, potentially nearly all, of the indexes were
+processed successfully.</p><p>You can additionally limit the maximal number of indexes marked failed by
+setting the <code>.spec.maxFailedIndexes</code> field.
+When the number of failed indexes exceeds the <code>maxFailedIndexes</code> field, the
+Job controller triggers termination of all remaining running Pods for that Job.
+Once all pods are terminated, the entire Job is marked failed by the Job
+controller, by setting the Failed condition in the Job status.</p><p>Here is an example manifest for a Job that defines a <code>backoffLimitPerIndex</code>:</p><div class="highlight code-sample"><div class="copy-code-icon"><a download="/controllers/job-backoff-limit-per-index-example.yaml" href="https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples//controllers/job-backoff-limit-per-index-example.yaml"><code>/controllers/job-backoff-limit-per-index-example.yaml</code>
+</a><img class="icon-copycode" onclick='copyCode("controllers-job-backoff-limit-per-index-example-yaml")' src="/images/copycode.svg" title="Copy /controllers/job-backoff-limit-per-index-example.yaml to clipboard"/></div><div class="includecode" id="controllers-job-backoff-limit-per-index-example-yaml"><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">job-backoff-limit-per-index-example</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completions</span><span class="p">:</span><span class="w"> </span><span class="m">10</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">parallelism</span><span class="p">:</span><span class="w"> </span><span class="m">3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completionMode</span><span class="p">:</span><span class="w"> </span><span class="l">Indexed </span><span class="w"> </span><span class="c"># required for the feature</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">backoffLimitPerIndex</span><span class="p">:</span><span class="w"> </span><span class="m">1</span><span class="w">  </span><span class="c"># maximal number of failures per index</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">maxFailedIndexes</span><span class="p">:</span><span class="w"> </span><span class="m">5</span><span class="w">      </span><span class="c"># maximal number of failed indexes before terminating the Job execution</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w"> </span><span class="c"># required for the feature</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">example</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">python</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w">           </span><span class="c"># The jobs fails as there is at least one failed index</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">                           </span><span class="c"># (all even indexes fail in here), yet all indexes</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">                           </span><span class="c"># are executed as maxFailedIndexes is not exceeded.</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="l">python3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- -<span class="l">c</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">          import os, sys
+</span></span></span><span class="line"><span class="cl"><span class="sd">          print("Hello world")
+</span></span></span><span class="line"><span class="cl"><span class="sd">          if int(os.environ.get("JOB_COMPLETION_INDEX")) % 2 == 0:
+</span></span></span><span class="line"><span class="cl"><span class="sd">            sys.exit(1)</span><span class="w">
+</span></span></span></code></pre></div></div></div><p>In the example above, the Job controller allows for one restart for each
+of the indexes. When the total number of failed indexes exceeds 5, then
+the entire Job is terminated.</p><p>Once the job is finished, the Job status looks as follows:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">kubectl get -o yaml job job-backoff-limit-per-index-example
+</span></span></code></pre></div><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">  </span><span class="nt">status</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">completedIndexes</span><span class="p">:</span><span class="w"> </span><span class="m">1</span><span class="p">,</span><span class="m">3</span><span class="p">,</span><span class="m">5</span><span class="p">,</span><span class="m">7</span><span class="p">,</span><span class="m">9</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">failedIndexes</span><span class="p">:</span><span class="w"> </span><span class="m">0</span><span class="p">,</span><span class="m">2</span><span class="p">,</span><span class="m">4</span><span class="p">,</span><span class="m">6</span><span class="p">,</span><span class="m">8</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">succeeded</span><span class="p">:</span><span class="w"> </span><span class="m">5</span><span class="w">          </span><span class="c"># 1 succeeded pod for each of 5 succeeded indexes</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">failed</span><span class="p">:</span><span class="w"> </span><span class="m">10</span><span class="w">            </span><span class="c"># 2 failed pods (1 retry) for each of 5 failed indexes</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">conditions</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span>- <span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="l">Job has failed indexes</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l">FailedIndexes</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s2">"True"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l">FailureTarget</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span>- <span class="nt">message</span><span class="p">:</span><span class="w"> </span><span class="l">Job has failed indexes</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">reason</span><span class="p">:</span><span class="w"> </span><span class="l">FailedIndexes</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s2">"True"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l">Failed</span><span class="w">
+</span></span></span></code></pre></div><p>The Job controller adds the <code>FailureTarget</code> Job condition to trigger
+<a href="#job-termination-and-cleanup">Job termination and cleanup</a>. When all of the
+Job Pods are terminated, the Job controller adds the <code>Failed</code> condition
+with the same values for <code>reason</code> and <code>message</code> as the <code>FailureTarget</code> Job
+condition. For details, see <a href="#termination-of-job-pods">Termination of Job Pods</a>.</p><p>Additionally, you may want to use the per-index backoff along with a
+<a href="#pod-failure-policy">pod failure policy</a>. When using
+per-index backoff, there is a new <code>FailIndex</code> action available which allows you to
+avoid unnecessary retries within an index.</p><h3 id="pod-failure-policy">Pod failure policy</h3><div class="feature-state-locked feature-state-removed feature-stable"><p><em>This is a stable feature in Kubernetes, and has been since the 1.31 release. You can no longer toggle this feature (the associated <a href="/docs/reference/command-line-tools-reference/feature-gates-removed/">feature gate</a> has been removed).</em></p></div><p>A Pod failure policy, defined with the <code>.spec.podFailurePolicy</code> field, enables
+your cluster to handle Pod failures based on the container exit codes and the
+Pod conditions.</p><p>In some situations, you may want to have a better control when handling Pod
+failures than the control provided by the <a href="#pod-backoff-failure-policy">Pod backoff failure policy</a>,
+which is based on the Job's <code>.spec.backoffLimit</code>. These are some examples of use cases:</p><ul><li>To optimize costs of running workloads by avoiding unnecessary Pod restarts,
+you can terminate a Job as soon as one of its Pods fails with an exit code
+indicating a software bug.</li><li>To guarantee that your Job finishes even if there are disruptions, you can
+ignore Pod failures caused by disruptions (such as <a aria-label="preemption" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/scheduling-eviction/pod-priority-preemption/#preemption" target="_blank" title="Preemption logic in Kubernetes helps a pending Pod to find a suitable Node by evicting low priority Pods existing on that Node.">preemption</a>,
+<a aria-label="API-initiated eviction" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/scheduling-eviction/api-eviction/" target="_blank" title="API-initiated eviction is the process by which you use the Eviction API to create an Eviction object that triggers graceful pod termination.">API-initiated eviction</a>
+or <a aria-label="taint" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/concepts/scheduling-eviction/taint-and-toleration/" target="_blank" title="A core object consisting of three required properties: key, value, and effect. Taints prevent the scheduling of pods on nodes or node groups.">taint</a>-based eviction) so
+that they don't count towards the <code>.spec.backoffLimit</code> limit of retries.</li></ul><p>You can configure a Pod failure policy, in the <code>.spec.podFailurePolicy</code> field,
+to meet the above use cases. This policy can handle Pod failures based on the
+container exit codes and the Pod conditions.</p><p>Here is a manifest for a Job that defines a <code>podFailurePolicy</code>:</p><div class="highlight code-sample"><div class="copy-code-icon"><a download="/controllers/job-pod-failure-policy-example.yaml" href="https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples//controllers/job-pod-failure-policy-example.yaml"><code>/controllers/job-pod-failure-policy-example.yaml</code>
+</a><img class="icon-copycode" onclick='copyCode("controllers-job-pod-failure-policy-example-yaml")' src="/images/copycode.svg" title="Copy /controllers/job-pod-failure-policy-example.yaml to clipboard"/></div><div class="includecode" id="controllers-job-pod-failure-policy-example-yaml"><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">job-pod-failure-policy-example</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completions</span><span class="p">:</span><span class="w"> </span><span class="m">12</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">parallelism</span><span class="p">:</span><span class="w"> </span><span class="m">3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">main</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">docker.io/library/bash:5</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"bash"</span><span class="p">]</span><span class="w">        </span><span class="c"># example command simulating a bug which triggers the FailJob action</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">args</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- -<span class="l">c</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="l">echo "Hello world!" &amp;&amp; sleep 5 &amp;&amp; exit 42</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">backoffLimit</span><span class="p">:</span><span class="w"> </span><span class="m">6</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">podFailurePolicy</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">rules</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span>- <span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l">FailJob</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">onExitCodes</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">containerName</span><span class="p">:</span><span class="w"> </span><span class="l">main     </span><span class="w"> </span><span class="c"># optional</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">operator: In             # one of</span><span class="p">:</span><span class="w"> </span><span class="l">In, NotIn</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">values</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="m">42</span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span>- <span class="nt">action: Ignore             # one of</span><span class="p">:</span><span class="w"> </span><span class="l">Ignore, FailJob, Count</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">onPodConditions</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l">DisruptionTarget  </span><span class="w"> </span><span class="c"># indicates Pod disruption</span><span class="w">
+</span></span></span></code></pre></div></div></div><p>In the example above, the first rule of the Pod failure policy specifies that
+the Job should be marked failed if the <code>main</code> container fails with the 42 exit
+code. The following are the rules for the <code>main</code> container specifically:</p><ul><li>an exit code of 0 means that the container succeeded</li><li>an exit code of 42 means that the <strong>entire Job</strong> failed</li><li>any other exit code represents that the container failed, and hence the entire
+Pod. The Pod will be re-created if the total number of restarts is
+below <code>backoffLimit</code>. If the <code>backoffLimit</code> is reached the <strong>entire Job</strong> failed.</li></ul><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>Because the Pod template specifies a <code>restartPolicy: Never</code>,
+the kubelet does not restart the <code>main</code> container in that particular Pod.</div><p>The second rule of the Pod failure policy, specifying the <code>Ignore</code> action for
+failed Pods with condition <code>DisruptionTarget</code> excludes Pod disruptions from
+being counted towards the <code>.spec.backoffLimit</code> limit of retries.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>If the Job failed, either by the Pod failure policy or Pod backoff
+failure policy, and the Job is running multiple Pods, Kubernetes terminates all
+the Pods in that Job that are still Pending or Running.</div><p>These are some requirements and semantics of the API:</p><ul><li>if you want to use a <code>.spec.podFailurePolicy</code> field for a Job, you must
+also define that Job's pod template with <code>.spec.restartPolicy</code> set to <code>Never</code>.</li><li>the Pod failure policy rules you specify under <code>spec.podFailurePolicy.rules</code>
+are evaluated in order. Once a rule matches a Pod failure, the remaining rules
+are ignored. When no rule matches the Pod failure, the default
+handling applies.</li><li>you may want to restrict a rule to a specific container by specifying its name
+in<code>spec.podFailurePolicy.rules[*].onExitCodes.containerName</code>. When not specified the rule
+applies to all containers. When specified, it should match one the container
+or <code>initContainer</code> names in the Pod template.</li><li>you may specify the action taken when a Pod failure policy is matched by
+<code>spec.podFailurePolicy.rules[*].action</code>. Possible values are:<ul><li><code>FailJob</code>: use to indicate that the Pod's job should be marked as Failed and
+all running Pods should be terminated.</li><li><code>Ignore</code>: use to indicate that the counter towards the <code>.spec.backoffLimit</code>
+should not be incremented and a replacement Pod should be created.</li><li><code>Count</code>: use to indicate that the Pod should be handled in the default way.
+The counter towards the <code>.spec.backoffLimit</code> should be incremented.</li><li><code>FailIndex</code>: use this action along with <a href="#backoff-limit-per-index">backoff limit per index</a>
+to avoid unnecessary retries within the index of a failed pod.</li></ul></li></ul><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>When you use a <code>podFailurePolicy</code>, the job controller only matches Pods in the
+<code>Failed</code> phase. Pods with a deletion timestamp that are not in a terminal phase
+(<code>Failed</code> or <code>Succeeded</code>) are considered still terminating. This implies that
+terminating pods retain a <a href="#job-tracking-with-finalizers">tracking finalizer</a>
+until they reach a terminal phase.
+Since Kubernetes 1.27, Kubelet transitions deleted pods to a terminal phase
+(see: <a href="/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase">Pod Phase</a>). This
+ensures that deleted pods have their finalizers removed by the Job controller.</div><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>Starting with Kubernetes v1.28, when Pod failure policy is used, the Job controller recreates
+terminating Pods only once these Pods reach the terminal <code>Failed</code> phase. This behavior is similar
+to <code>podReplacementPolicy: Failed</code>. For more information, see <a href="#pod-replacement-policy">Pod replacement policy</a>.</div><p>When you use the <code>podFailurePolicy</code>, and the Job fails due to the pod
+matching the rule with the <code>FailJob</code> action, then the Job controller triggers
+the Job termination process by adding the <code>FailureTarget</code> condition.
+For more details, see <a href="#job-termination-and-cleanup">Job termination and cleanup</a>.</p><h2 id="success-policy">Success policy</h2><p>When creating an Indexed Job, you can define when a Job can be declared as succeeded using a <code>.spec.successPolicy</code>,
+based on the pods that succeeded.</p><p>By default, a Job succeeds when the number of succeeded Pods equals <code>.spec.completions</code>.
+These are some situations where you might want additional control for declaring a Job succeeded:</p><ul><li>When running simulations with different parameters,
+you might not need all the simulations to succeed for the overall Job to be successful.</li><li>When following a leader-worker pattern, only the success of the leader determines the success or
+failure of a Job. Examples of this are frameworks like MPI and PyTorch etc.</li></ul><p>You can configure a success policy, in the <code>.spec.successPolicy</code> field,
+to meet the above use cases. This policy can handle Job success based on the
+succeeded pods. After the Job meets the success policy, the job controller terminates the lingering Pods.
+A success policy is defined by rules. Each rule can take one of the following forms:</p><ul><li>When you specify the <code>succeededIndexes</code> only,
+once all indexes specified in the <code>succeededIndexes</code> succeed, the job controller marks the Job as succeeded.
+The <code>succeededIndexes</code> must be a list of intervals between 0 and <code>.spec.completions-1</code>.</li><li>When you specify the <code>succeededCount</code> only,
+once the number of succeeded indexes reaches the <code>succeededCount</code>, the job controller marks the Job as succeeded.</li><li>When you specify both <code>succeededIndexes</code> and <code>succeededCount</code>,
+once the number of succeeded indexes from the subset of indexes specified in the <code>succeededIndexes</code> reaches the <code>succeededCount</code>,
+the job controller marks the Job as succeeded.</li></ul><p>Note that when you specify multiple rules in the <code>.spec.successPolicy.rules</code>,
+the job controller evaluates the rules in order. Once the Job meets a rule, the job controller ignores remaining rules.</p><p>Here is a manifest for a Job with <code>successPolicy</code>:</p><div class="highlight code-sample"><div class="copy-code-icon"><a download="/controllers/job-success-policy.yaml" href="https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples//controllers/job-success-policy.yaml"><code>/controllers/job-success-policy.yaml</code>
+</a><img class="icon-copycode" onclick='copyCode("controllers-job-success-policy-yaml")' src="/images/copycode.svg" title="Copy /controllers/job-success-policy.yaml to clipboard"/></div><div class="includecode" id="controllers-job-success-policy-yaml"><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">job-success</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">parallelism</span><span class="p">:</span><span class="w"> </span><span class="m">10</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completions</span><span class="p">:</span><span class="w"> </span><span class="m">10</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completionMode</span><span class="p">:</span><span class="w"> </span><span class="l">Indexed</span><span class="w"> </span><span class="c"># Required for the success policy</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">successPolicy</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">rules</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">succeededIndexes</span><span class="p">:</span><span class="w"> </span><span class="m">0</span><span class="p">,</span><span class="m">2-3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">succeededCount</span><span class="p">:</span><span class="w"> </span><span class="m">1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">main</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">python</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w">          </span><span class="c"># Provided that at least one of the Pods with 0, 2, and 3 indexes has succeeded,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">                          </span><span class="c"># the overall Job is a success.</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span>- <span class="l">python3</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span>- -<span class="l">c</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span>- <span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">            import os, sys
+</span></span></span><span class="line"><span class="cl"><span class="sd">            if os.environ.get("JOB_COMPLETION_INDEX") == "2":
+</span></span></span><span class="line"><span class="cl"><span class="sd">              sys.exit(0)
+</span></span></span><span class="line"><span class="cl"><span class="sd">            else:
+</span></span></span><span class="line"><span class="cl"><span class="sd">              sys.exit(1)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span></code></pre></div></div></div><p>In the example above, both <code>succeededIndexes</code> and <code>succeededCount</code> have been specified.
+Therefore, the job controller will mark the Job as succeeded and terminate the lingering Pods
+when either of the specified indexes, 0, 2, or 3, succeed.
+The Job that meets the success policy gets the <code>SuccessCriteriaMet</code> condition with a <code>SuccessPolicy</code> reason.
+After the removal of the lingering Pods is issued, the Job gets the <code>Complete</code> condition.</p><p>Note that the <code>succeededIndexes</code> is represented as intervals separated by a hyphen.
+The number are listed in represented by the first and last element of the series, separated by a hyphen.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>When you specify both a success policy and some terminating policies such as <code>.spec.backoffLimit</code> and <code>.spec.podFailurePolicy</code>,
+once the Job meets either policy, the job controller respects the terminating policy and ignores the success policy.</div><h2 id="job-termination-and-cleanup">Job termination and cleanup</h2><p>When a Job completes, no more Pods are created, but the Pods are <a href="#pod-backoff-failure-policy">usually</a> not deleted either.
+Keeping them around allows you to still view the logs of completed pods to check for errors, warnings, or other diagnostic output.
+The job object also remains after it is completed so that you can view its status. It is up to the user to delete
+old jobs after noting their status. Delete the job with <code>kubectl</code> (e.g. <code>kubectl delete jobs/pi</code> or <code>kubectl delete -f ./job.yaml</code>).
+When you delete the job using <code>kubectl</code>, all the pods it created are deleted too.</p><p>By default, a Job will run uninterrupted unless a Pod fails (<code>restartPolicy=Never</code>)
+or a Container exits in error (<code>restartPolicy=OnFailure</code>), at which point the Job defers to the
+<code>.spec.backoffLimit</code> described above. Once <code>.spec.backoffLimit</code> has been reached the Job will
+be marked as failed and any running Pods will be terminated.</p><p>Another way to terminate a Job is by setting an active deadline.
+Do this by setting the <code>.spec.activeDeadlineSeconds</code> field of the Job to a number of seconds.
+The <code>activeDeadlineSeconds</code> applies to the duration of the job, no matter how many Pods are created.
+Once a Job reaches <code>activeDeadlineSeconds</code>, all of its running Pods are terminated and the Job status
+will become <code>type: Failed</code> with <code>reason: DeadlineExceeded</code>.</p><p>Note that a Job's <code>.spec.activeDeadlineSeconds</code> takes precedence over its <code>.spec.backoffLimit</code>.
+Therefore, a Job that is retrying one or more failed Pods will not deploy additional Pods once
+it reaches the time limit specified by <code>activeDeadlineSeconds</code>, even if the <code>backoffLimit</code> is not yet reached.</p><p>Example:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">pi-with-timeout</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">backoffLimit</span><span class="p">:</span><span class="w"> </span><span class="m">5</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">activeDeadlineSeconds</span><span class="p">:</span><span class="w"> </span><span class="m">100</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">pi</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">perl:5.34.0</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"perl"</span><span class="p">,</span><span class="w"> </span><span class="s2">"-Mbignum=bpi"</span><span class="p">,</span><span class="w"> </span><span class="s2">"-wle"</span><span class="p">,</span><span class="w"> </span><span class="s2">"print bpi(2000)"</span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span></code></pre></div><p>Note that both the Job spec and the <a href="/docs/concepts/workloads/pods/init-containers/#detailed-behavior">Pod template spec</a>
+within the Job have an <code>activeDeadlineSeconds</code> field. Ensure that you set this field at the proper level.</p><p>Keep in mind that the <code>restartPolicy</code> applies to the Pod, and not to the Job itself:
+there is no automatic Job restart once the Job status is <code>type: Failed</code>.
+That is, the Job termination mechanisms activated with <code>.spec.activeDeadlineSeconds</code>
+and <code>.spec.backoffLimit</code> result in a permanent Job failure that requires manual intervention to resolve.</p><h3 id="terminal-job-conditions">Terminal Job conditions</h3><p>A Job has two possible terminal states, each of which has a corresponding Job
+condition:</p><ul><li>Succeeded: Job condition <code>Complete</code></li><li>Failed: Job condition <code>Failed</code></li></ul><p>Jobs fail for the following reasons:</p><ul><li>The number of Pod failures exceeded the specified <code>.spec.backoffLimit</code> in the Job
+specification. For details, see <a href="#pod-backoff-failure-policy">Pod backoff failure policy</a>.</li><li>The Job runtime exceeded the specified <code>.spec.activeDeadlineSeconds</code></li><li>An indexed Job that used <code>.spec.backoffLimitPerIndex</code> has failed indexes.
+For details, see <a href="#backoff-limit-per-index">Backoff limit per index</a>.</li><li>The number of failed indexes in the Job exceeded the specified
+<code>spec.maxFailedIndexes</code>. For details, see <a href="#backoff-limit-per-index">Backoff limit per index</a></li><li>A failed Pod matches a rule in <code>.spec.podFailurePolicy</code> that has the <code>FailJob</code>
+action. For details about how Pod failure policy rules might affect failure
+evaluation, see <a href="#pod-failure-policy">Pod failure policy</a>.</li></ul><p>Jobs succeed for the following reasons:</p><ul><li>The number of succeeded Pods reached the specified <code>.spec.completions</code></li><li>The criteria specified in <code>.spec.successPolicy</code> are met. For details, see
+<a href="#success-policy">Success policy</a>.</li></ul><p>In Kubernetes v1.31 and later the Job controller delays the addition of the
+terminal conditions,<code>Failed</code> or <code>Complete</code>, until all of the Job Pods are terminated.</p><p>In Kubernetes v1.30 and earlier, the Job controller added the <code>Complete</code> or the
+<code>Failed</code> Job terminal conditions as soon as the Job termination process was
+triggered and all Pod finalizers were removed. However, some Pods would still
+be running or terminating at the moment that the terminal condition was added.</p><p>In Kubernetes v1.31 and later, the controller only adds the Job terminal conditions
+<em>after</em> all of the Pods are terminated. You can control this behavior by using the
+<code>JobManagedBy</code> and the <code>JobPodReplacementPolicy</code> (both enabled by default)
+<a href="/docs/reference/command-line-tools-reference/feature-gates/">feature gates</a>.</p><h3 id="termination-of-job-pods">Termination of Job pods</h3><p>The Job controller adds the <code>FailureTarget</code> condition or the <code>SuccessCriteriaMet</code>
+condition to the Job to trigger Pod termination after a Job meets either the
+success or failure criteria.</p><p>Factors like <code>terminationGracePeriodSeconds</code> might increase the amount of time
+from the moment that the Job controller adds the <code>FailureTarget</code> condition or the
+<code>SuccessCriteriaMet</code> condition to the moment that all of the Job Pods terminate
+and the Job controller adds a <a href="#terminal-job-conditions">terminal condition</a>
+(<code>Failed</code> or <code>Complete</code>).</p><p>You can use the <code>FailureTarget</code> or the <code>SuccessCriteriaMet</code> condition to evaluate
+whether the Job has failed or succeeded without having to wait for the controller
+to add a terminal condition.</p><p>For example, you might want to decide when to create a replacement Job
+that replaces a failed Job. If you replace the failed Job when the <code>FailureTarget</code>
+condition appears, your replacement Job runs sooner, but could result in Pods
+from the failed and the replacement Job running at the same time, using
+extra compute resources.</p><p>Alternatively, if your cluster has limited resource capacity, you could choose to
+wait until the <code>Failed</code> condition appears on the Job, which would delay your
+replacement Job but would ensure that you conserve resources by waiting
+until all of the failed Pods are removed.</p><h2 id="clean-up-finished-jobs-automatically">Clean up finished jobs automatically</h2><p>Finished Jobs are usually no longer needed in the system. Keeping them around in
+the system will put pressure on the API server. If the Jobs are managed directly
+by a higher level controller, such as
+<a href="/docs/concepts/workloads/controllers/cron-jobs/">CronJobs</a>, the Jobs can be
+cleaned up by CronJobs based on the specified capacity-based cleanup policy.</p><h3 id="ttl-mechanism-for-finished-jobs">TTL mechanism for finished Jobs</h3><div class="feature-state-notice feature-stable"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.23</span></div><p>Another way to clean up finished Jobs (either <code>Complete</code> or <code>Failed</code>)
+automatically is to use a TTL mechanism provided by a
+<a href="/docs/concepts/workloads/controllers/ttlafterfinished/">TTL controller</a> for
+finished resources, by specifying the <code>.spec.ttlSecondsAfterFinished</code> field of
+the Job.</p><p>When the TTL controller cleans up the Job, it will delete the Job cascadingly,
+i.e. delete its dependent objects, such as Pods, together with the Job. Note
+that when the Job is deleted, its lifecycle guarantees, such as finalizers, will
+be honored.</p><p>For example:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">pi-with-ttl</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">ttlSecondsAfterFinished</span><span class="p">:</span><span class="w"> </span><span class="m">100</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">containers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">pi</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">perl:5.34.0</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"perl"</span><span class="p">,</span><span class="w"> </span><span class="s2">"-Mbignum=bpi"</span><span class="p">,</span><span class="w"> </span><span class="s2">"-wle"</span><span class="p">,</span><span class="w"> </span><span class="s2">"print bpi(2000)"</span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">restartPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Never</span><span class="w">
+</span></span></span></code></pre></div><p>The Job <code>pi-with-ttl</code> will be eligible to be automatically deleted, <code>100</code>
+seconds after it finishes.</p><p>If the field is set to <code>0</code>, the Job will be eligible to be automatically deleted
+immediately after it finishes. If the field is unset, this Job won't be cleaned
+up by the TTL controller after it finishes.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4><p>It is recommended to set <code>ttlSecondsAfterFinished</code> field because unmanaged jobs
+(Jobs that you created directly, and not indirectly through other workload APIs
+such as CronJob) have a default deletion
+policy of <code>orphanDependents</code> causing Pods created by an unmanaged Job to be left around
+after that Job is fully deleted.
+Even though the <a aria-label="control plane" class="glossary-tooltip" data-bs-placement="top" data-bs-toggle="tooltip" href="/docs/reference/glossary/?all=true#term-control-plane" target="_blank" title="The container orchestration layer that exposes the API and interfaces to define, deploy, and manage the lifecycle of containers.">control plane</a> eventually
+<a href="/docs/concepts/workloads/pods/pod-lifecycle/#pod-garbage-collection">garbage collects</a>
+the Pods from a deleted Job after they either fail or complete, sometimes those
+lingering pods may cause cluster performance degradation or in worst case cause the
+cluster to go offline due to this degradation.</p><p>You can use <a href="/docs/concepts/policy/limit-range/">LimitRanges</a> and
+<a href="/docs/concepts/policy/resource-quotas/">ResourceQuotas</a> to place a
+cap on the amount of resources that a particular namespace can
+consume.</p></div><h2 id="job-patterns">Job patterns</h2><p>The Job object can be used to process a set of independent but related <em>work items</em>.
+These might be emails to be sent, frames to be rendered, files to be transcoded,
+ranges of keys in a NoSQL database to scan, and so on.</p><p>In a complex system, there may be multiple different sets of work items. Here we are just
+considering one set of work items that the user wants to manage together — a <em>batch job</em>.</p><p>There are several different patterns for parallel computation, each with strengths and weaknesses.
+The tradeoffs are:</p><ul><li>One Job object for each work item, versus a single Job object for all work items.
+One Job per work item creates some overhead for the user and for the system to manage
+large numbers of Job objects.
+A single Job for all work items is better for large numbers of items.</li><li>Number of Pods created equals number of work items, versus each Pod can process multiple work items.
+When the number of Pods equals the number of work items, the Pods typically
+requires less modification to existing code and containers. Having each Pod
+process multiple work items is better for large numbers of items.</li><li>Several approaches use a work queue. This requires running a queue service,
+and modifications to the existing program or container to make it use the work queue.
+Other approaches are easier to adapt to an existing containerised application.</li><li>When the Job is associated with a
+<a href="/docs/concepts/services-networking/service/#headless-services">headless Service</a>,
+you can enable the Pods within a Job to communicate with each other to
+collaborate in a computation.</li></ul><p>The tradeoffs are summarized here, with columns 2 to 4 corresponding to the above tradeoffs.
+The pattern names are also links to examples and more detailed description.</p><table><thead><tr><th>Pattern</th><th style="text-align:center">Single Job object</th><th style="text-align:center">Fewer pods than work items?</th><th style="text-align:center">Use app unmodified?</th></tr></thead><tbody><tr><td><a href="/docs/tasks/job/coarse-parallel-processing-work-queue/">Queue with Pod Per Work Item</a></td><td style="text-align:center">✓</td><td style="text-align:center"></td><td style="text-align:center">sometimes</td></tr><tr><td><a href="/docs/tasks/job/fine-parallel-processing-work-queue/">Queue with Variable Pod Count</a></td><td style="text-align:center">✓</td><td style="text-align:center">✓</td><td style="text-align:center"></td></tr><tr><td><a href="/docs/tasks/job/indexed-parallel-processing-static/">Indexed Job with Static Work Assignment</a></td><td style="text-align:center">✓</td><td style="text-align:center"></td><td style="text-align:center">✓</td></tr><tr><td><a href="/docs/tasks/job/job-with-pod-to-pod-communication/">Job with Pod-to-Pod Communication</a></td><td style="text-align:center">✓</td><td style="text-align:center">sometimes</td><td style="text-align:center">sometimes</td></tr><tr><td><a href="/docs/tasks/job/parallel-processing-expansion/">Job Template Expansion</a></td><td style="text-align:center"></td><td style="text-align:center"></td><td style="text-align:center">✓</td></tr></tbody></table><p>When you specify completions with <code>.spec.completions</code>, each Pod created by the Job controller
+has an identical <a href="https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status"><code>spec</code></a>.
+This means that all pods for a task will have the same command line and the same
+image, the same volumes, and (almost) the same environment variables. These patterns
+are different ways to arrange for pods to work on different things.</p><p>This table shows the required settings for <code>.spec.parallelism</code> and <code>.spec.completions</code> for each of the patterns.
+Here, <code>W</code> is the number of work items.</p><table><thead><tr><th>Pattern</th><th style="text-align:center"><code>.spec.completions</code></th><th style="text-align:center"><code>.spec.parallelism</code></th></tr></thead><tbody><tr><td><a href="/docs/tasks/job/coarse-parallel-processing-work-queue/">Queue with Pod Per Work Item</a></td><td style="text-align:center">W</td><td style="text-align:center">any</td></tr><tr><td><a href="/docs/tasks/job/fine-parallel-processing-work-queue/">Queue with Variable Pod Count</a></td><td style="text-align:center">null</td><td style="text-align:center">any</td></tr><tr><td><a href="/docs/tasks/job/indexed-parallel-processing-static/">Indexed Job with Static Work Assignment</a></td><td style="text-align:center">W</td><td style="text-align:center">any</td></tr><tr><td><a href="/docs/tasks/job/job-with-pod-to-pod-communication/">Job with Pod-to-Pod Communication</a></td><td style="text-align:center">W</td><td style="text-align:center">W</td></tr><tr><td><a href="/docs/tasks/job/parallel-processing-expansion/">Job Template Expansion</a></td><td style="text-align:center">1</td><td style="text-align:center">should be 1</td></tr></tbody></table><h2 id="advanced-usage">Advanced usage</h2><h3 id="suspending-a-job">Suspending a Job</h3><div class="feature-state-notice feature-stable"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.24</span></div><p>When a Job is created, the Job controller will immediately begin creating Pods
+to satisfy the Job's requirements and will continue to do so until the Job is
+complete. However, you may want to temporarily suspend a Job's execution and
+resume it later, or start Jobs in suspended state and have a custom controller
+decide later when to start them.</p><p>To suspend a Job, you can update the <code>.spec.suspend</code> field of
+the Job to true; later, when you want to resume it again, update it to false.
+Creating a Job with <code>.spec.suspend</code> set to true will create it in the suspended
+state.</p><p>In Kubernetes 1.35 or later the <code>.status.startTime</code> field is cleared on Job suspension
+when the <a href="#mutable-scheduling-directives-for-suspended-jobs">MutableSchedulingDirectivesForSuspendedJobs</a>
+feature gate is enabled.</p><p>When a Job is resumed from suspension, its <code>.status.startTime</code> field will be
+reset to the current time. This means that the <code>.spec.activeDeadlineSeconds</code>
+timer will be stopped and reset when a Job is suspended and resumed.</p><p>When you suspend a Job, any running Pods that don't have a status of <code>Completed</code>
+will be <a href="/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination">terminated</a>
+with a SIGTERM signal. The Pod's graceful termination period will be honored and
+your Pod must handle this signal in this period. This may involve saving
+progress for later or undoing changes. Pods terminated this way will not count
+towards the Job's <code>completions</code> count.</p><p>An example Job definition in the suspended state can be like so:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl get job myjob -o yaml
+</span></span></code></pre></div><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">myjob</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">suspend</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">parallelism</span><span class="p">:</span><span class="w"> </span><span class="m">1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">completions</span><span class="p">:</span><span class="w"> </span><span class="m">5</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">template</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="l">...</span><span class="w">
+</span></span></span></code></pre></div><p>You can also toggle Job suspension by patching the Job using the command line.</p><p>Suspend an active Job:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl patch job/myjob --type<span class="o">=</span>strategic --patch <span class="s1">'{"spec":{"suspend":true}}'</span>
+</span></span></code></pre></div><p>Resume a suspended Job:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl patch job/myjob --type<span class="o">=</span>strategic --patch <span class="s1">'{"spec":{"suspend":false}}'</span>
+</span></span></code></pre></div><p>The Job's status can be used to determine if a Job is suspended or has been
+suspended in the past:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl get jobs/myjob -o yaml
+</span></span></code></pre></div><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="c"># .metadata and .spec omitted</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">status</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="nt">lastProbeTime</span><span class="p">:</span><span class="w"> </span><span class="s2">"2021-02-05T13:14:33Z"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">lastTransitionTime</span><span class="p">:</span><span class="w"> </span><span class="s2">"2021-02-05T13:14:33Z"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="s2">"True"</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l">Suspended</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">startTime</span><span class="p">:</span><span class="w"> </span><span class="s2">"2021-02-05T13:13:48Z"</span><span class="w">
+</span></span></span></code></pre></div><p>The Job condition of type "Suspended" with status "True" means the Job is
+suspended; the <code>lastTransitionTime</code> field can be used to determine how long the
+Job has been suspended for. If the status of that condition is "False", then the
+Job was previously suspended and is now running. If such a condition does not
+exist in the Job's status, the Job has never been stopped.</p><p>Events are also created when the Job is suspended and resumed:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl describe jobs/myjob
+</span></span></code></pre></div><pre tabindex="0"><code>Name:           myjob
+...
+Events:
+  Type    Reason            Age   From            Message
+  ----    ------            ----  ----            -------
+  Normal  SuccessfulCreate  12m   job-controller  Created pod: myjob-hlrpl
+  Normal  SuccessfulDelete  11m   job-controller  Deleted pod: myjob-hlrpl
+  Normal  Suspended         11m   job-controller  Job suspended
+  Normal  SuccessfulCreate  3s    job-controller  Created pod: myjob-jvb44
+  Normal  Resumed           3s    job-controller  Job resumed
+</code></pre><p>The last four events, particularly the "Suspended" and "Resumed" events, are
+directly a result of toggling the <code>.spec.suspend</code> field. In the time between
+these two events, we see that no Pods were created, but Pod creation restarted
+as soon as the Job was resumed.</p><h3 id="mutable-scheduling-directives">Mutable Scheduling Directives</h3><div class="feature-state-notice feature-stable"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.27</span></div><p>In most cases, a parallel job will want the pods to run with constraints,
+like all in the same zone, or all either on GPU model x or y but not a mix of both.</p><p>The <a href="#suspending-a-job">suspend</a> field is the first step towards achieving those semantics. Suspend allows a
+custom queue controller to decide when a job should start; However, once a job is unsuspended,
+a custom queue controller has no influence on where the pods of a job will actually land.</p><p>This feature allows updating a Job's scheduling directives before it starts, which gives custom queue
+controllers the ability to influence pod placement while at the same time offloading actual
+pod-to-node assignment to kube-scheduler.</p><p>The fields in a Job's pod template that can be updated are node affinity, node selector,
+tolerations, labels, annotations and <a href="/docs/concepts/scheduling-eviction/pod-scheduling-readiness/">scheduling gates</a>.</p><h4 id="mutable-scheduling-directives-for-suspended-jobs">Mutable Scheduling Directives for suspended Jobs</h4><div class="feature-state-notice feature-beta" title="Feature Gate: MutableSchedulingDirectivesForSuspendedJobs"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Beta</span> since Kubernetes v1.36; enabled by default</span></div><div class="feature-beta"></div><p>In Kubernetes 1.34 or earlier mutating of Pod's scheduling directives is allowed only for
+suspended Jobs that have never been unsuspended before. In Kubernetes 1.35, this is allowed
+for any suspended Jobs when the <code>MutableSchedulingDirectivesForSuspendedJobs</code> feature gate is enabled.</p><p>Additionally, this feature gate enables clearing of the <code>.status.startTime</code> field on <a href="#suspending-a-job">Job suspension</a>.</p><h3 id="mutable-pod-resources-for-suspended-jobs">Mutable Pod resources for suspended Jobs</h3><div class="feature-state-notice feature-beta" title="Feature Gate: MutablePodResourcesForSuspendedJobs"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Beta</span> since Kubernetes v1.36; enabled by default</span></div><div class="feature-beta"></div><p>A cluster administrator can define admission controls in Kubernetes, modifying the resource requests or limits for a Job, based on policy rules.</p><p>With this feature, Kubernetes also lets you modify the pod template of a <a href="#suspending-a-job">suspended job</a>, to change the resource requirements of the Pods in the Job.
+This is different from <em>in-place Pod resize</em> which lets you update resources, one Pod at a time, for Pods that are already running.</p><p>The client that sets the new resource requests or limits can be different from the client that initially created the Job, and does not need to be a cluster administrator.</p><h3 id="specifying-your-own-pod-selector">Specifying your own Pod selector</h3><p>Normally, when you create a Job object, you do not specify <code>.spec.selector</code>.
+The system defaulting logic adds this field when the Job is created.
+It picks a selector value that will not overlap with any other jobs.</p><p>However, in some cases, you might need to override this automatically set selector.
+To do this, you can specify the <code>.spec.selector</code> of the Job.</p><p>Be very careful when doing this. If you specify a label selector which is not
+unique to the pods of that Job, and which matches unrelated Pods, then pods of the unrelated
+job may be deleted, or this Job may count other Pods as completing it, or one or both
+Jobs may refuse to create Pods or run to completion. If a non-unique selector is
+chosen, then other controllers (e.g. ReplicationController) and their Pods may behave
+in unpredictable ways too. Kubernetes will not stop you from making a mistake when
+specifying <code>.spec.selector</code>.</p><p>Here is an example of a case when you might want to use this feature.</p><p>Say Job <code>old</code> is already running. You want existing Pods
+to keep running, but you want the rest of the Pods it creates
+to use a different pod template and for the Job to have a new name.
+You cannot update the Job because these fields are not updatable.
+Therefore, you delete Job <code>old</code> but <em>leave its pods
+running</em>, using <code>kubectl delete jobs/old --cascade=orphan</code>.
+Before deleting it, you make a note of what selector it uses:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl get job old -o yaml
+</span></span></code></pre></div><p>The output is similar to this:</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">old</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="l">...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">selector</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">batch.kubernetes.io/controller-uid</span><span class="p">:</span><span class="w"> </span><span class="l">a8f3d00d-c6d2-11e5-9f87-42010af00002</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="l">...</span><span class="w">
+</span></span></span></code></pre></div><p>Then you create a new Job with name <code>new</code> and you explicitly specify the same selector.
+Since the existing Pods have label <code>batch.kubernetes.io/controller-uid=a8f3d00d-c6d2-11e5-9f87-42010af00002</code>,
+they are controlled by Job <code>new</code> as well.</p><p>You need to specify <code>manualSelector: true</code> in the new Job since you are not using
+the selector that the system normally generates for you automatically.</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">new</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="l">...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">manualSelector</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">selector</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">matchLabels</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">batch.kubernetes.io/controller-uid</span><span class="p">:</span><span class="w"> </span><span class="l">a8f3d00d-c6d2-11e5-9f87-42010af00002</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="l">...</span><span class="w">
+</span></span></span></code></pre></div><p>The new Job itself will have a different uid from <code>a8f3d00d-c6d2-11e5-9f87-42010af00002</code>. Setting
+<code>manualSelector: true</code> tells the system that you know what you are doing and to allow this
+mismatch.</p><h3 id="job-tracking-with-finalizers">Job tracking with finalizers</h3><div class="feature-state-notice feature-stable"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.26</span></div><p>The control plane keeps track of the Pods that belong to any Job and notices if
+any such Pod is removed from the API server. To do that, the Job controller
+creates Pods with the finalizer <code>batch.kubernetes.io/job-tracking</code>. The
+controller removes the finalizer only after the Pod has been accounted for in
+the Job status, allowing the Pod to be removed by other controllers or users.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>See <a href="/docs/tasks/debug/debug-application/debug-pods/">My pod stays terminating</a> if you
+observe that pods from a Job are stuck with the tracking finalizer.</div><h3 id="elastic-indexed-jobs">Elastic Indexed Jobs</h3><div class="feature-state-notice feature-stable" title="Feature Gate: ElasticIndexedJob"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.31; enabled by default</span></div><div class="feature-stable"><details><summary>More information about this feature</summary><p><em>This is a stable feature in <no value="">, and has been since version 1.31. It was first available in the v1.27 release.</no></em></p></details></div><p>You can scale Indexed Jobs up or down by mutating both <code>.spec.parallelism</code>
+and <code>.spec.completions</code> together such that <code>.spec.parallelism == .spec.completions</code>.
+When scaling down, Kubernetes removes the Pods with higher indexes.</p><p>Use cases for elastic Indexed Jobs include batch workloads which require
+scaling an indexed Job, such as MPI, Horovod, Ray, and PyTorch training jobs.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4><p>When the <a href="/docs/reference/command-line-tools-reference/feature-gates/"><code>WorkloadWithJob</code></a>
+feature gate is enabled and a Job uses <a href="#integrate-with-workload-apis">gang scheduling</a>,
+the gang size follows the mutable <code>schedulingPolicy.gang.minCount</code> (or
+<code>.spec.parallelism</code> when <code>minCount</code> is unset).
+You can scale the gang in one of two ways:</p><ul><li>set <code>.spec.scheduling.schedulingPolicy.gang.minCount</code> directly, or</li><li>change <code>.spec.parallelism</code> when <code>minCount</code> is unset.</li></ul><p>On either change, the controller recompiles the <code>Workload</code> and re-syncs the
+<code>PodGroup</code> size, rescaling the gang in place without recreating the Job. Updates
+apply only to Pods evaluated in future scheduling cycles and do not affect
+already-scheduled Pods. A <code>gang.minCount</code> greater than <code>.spec.parallelism</code> is
+rejected, since such a gang can never be satisfied.</p></div><h3 id="pod-replacement-policy">Delayed creation of replacement pods</h3><div class="feature-state-notice feature-stable" title="Feature Gate: JobPodReplacementPolicy"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.34</span></div><div class="feature-stable"><details><summary>More information about this feature</summary><p>This is a stable feature in Kubernetes, and has been since version v1.34. It was first available in the v1.28 release. You can no longer disable or opt out of this feature or behavior (it is locked); if you explicitly set a value for the associated feature gate <tt>JobPodReplacementPolicy</tt>, Kubernetes ignores it but does not report any error.</p></details></div><p>By default, the Job controller recreates Pods as soon they either fail or are terminating (have a deletion timestamp).
+This means that, at a given time, when some of the Pods are terminating, the number of running Pods for a Job
+can be greater than <code>parallelism</code> or greater than one Pod per index (if you are using an Indexed Job).</p><p>You may choose to create replacement Pods only when the terminating Pod is fully terminal (has <code>status.phase: Failed</code>).
+To do this, set the <code>.spec.podReplacementPolicy: Failed</code>.
+The default replacement policy depends on whether the Job has a <code>podFailurePolicy</code> set.
+With no Pod failure policy defined for a Job, omitting the <code>podReplacementPolicy</code> field selects the
+<code>TerminatingOrFailed</code> replacement policy:
+the control plane creates replacement Pods immediately upon Pod deletion
+(as soon as the control plane sees that a Pod for this Job has <code>deletionTimestamp</code> set).
+For Jobs with a Pod failure policy set, the default <code>podReplacementPolicy</code> is <code>Failed</code>, and no other
+value is permitted.
+See <a href="#pod-failure-policy">Pod failure policy</a> to learn more about Pod failure policies for Jobs.</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">new</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="l">...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">spec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">podReplacementPolicy</span><span class="p">:</span><span class="w"> </span><span class="l">Failed</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="l">...</span><span class="w">
+</span></span></span></code></pre></div><p>Provided your cluster has the feature gate enabled, you can inspect the <code>.status.terminating</code> field of a Job.
+The value of the field is the number of Pods owned by the Job that are currently terminating.</p><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-shell" data-lang="shell"><span class="line"><span class="cl">kubectl get jobs/myjob -o yaml
+</span></span></code></pre></div><div class="highlight"><pre class="chroma" tabindex="0"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l">batch/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">Job</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="c"># .metadata and .spec omitted</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w"></span><span class="nt">status</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">terminating</span><span class="p">:</span><span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="c"># three Pods are terminating and have not yet reached the Failed phase</span><span class="w">
+</span></span></span></code></pre></div><h3 id="delegation-of-managing-a-job-object-to-external-controller">Delegation of managing a Job object to external controller</h3><div class="feature-state-notice feature-stable" title="Feature Gate: JobManagedBy"><span class="feature-state-name">Feature state:</span>
+<span class="feature-state-details"><span class="feature-state-stage">Stable</span> since Kubernetes v1.35; enabled by default</span></div><div class="feature-stable"><details><summary>More information about this feature</summary><p><em>This is a stable feature in <no value="">, and has been since version 1.35. It was first available in the v1.30 release.</no></em></p></details></div><p>This feature allows you to disable the built-in Job controller, for a specific
+Job, and delegate reconciliation of the Job to an external controller.</p><p>You indicate the controller that reconciles the Job by setting a custom value
+for the <code>spec.managedBy</code> field - any value
+other than <code>kubernetes.io/job-controller</code>. The value of the field is immutable.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>When using this feature, make sure the controller indicated by the field is
+installed, otherwise the Job may not be reconciled at all.</div><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4><p>When developing an external Job controller be aware that your controller needs
+to operate in a fashion conformant with the definitions of the API spec and
+status fields of the Job object.</p><p>Please review these in detail in the <a href="/docs/reference/kubernetes-api/workload-resources/job-v1/">Job API</a>.
+We also recommend that you run the e2e conformance tests for the Job object to
+verify your implementation.</p><p>Finally, when developing an external Job controller make sure it does not use the
+<code>batch.kubernetes.io/job-tracking</code> finalizer, reserved for the built-in controller.</p></div><h2 id="alternatives">Alternatives</h2><h3 id="bare-pods">Bare Pods</h3><p>When the node that a Pod is running on reboots or fails, the pod is terminated
+and will not be restarted. However, a Job will create new Pods to replace terminated ones.
+For this reason, we recommend that you use a Job rather than a bare Pod, even if your application
+requires only a single Pod.</p><h3 id="replication-controller">Replication Controller</h3><p>Jobs are complementary to <a href="/docs/concepts/workloads/controllers/replicationcontroller/">Replication Controllers</a>.
+A Replication Controller manages Pods which are not expected to terminate (e.g. web servers), and a Job
+manages Pods that are expected to terminate (e.g. batch tasks).</p><p>As discussed in <a href="/docs/concepts/workloads/pods/pod-lifecycle/">Pod Lifecycle</a>, <code>Job</code> is <em>only</em> appropriate
+for pods with <code>RestartPolicy</code> equal to <code>OnFailure</code> or <code>Never</code>.</p><div class="alert alert-info" role="note"><h4 class="alert-heading">Note:</h4>If <code>RestartPolicy</code> is not set, the default value is <code>Always</code>.</div><h3 id="single-job-starts-controller-pod">Single Job starts controller Pod</h3><p>Another pattern is for a single Job to create a Pod which then creates other Pods, acting as a sort
+of custom controller for those Pods. This allows the most flexibility, but may be somewhat
+complicated to get started with and offers less integration with Kubernetes.</p><p>An advantage of this approach is that the overall process gets the completion guarantee of a Job
+object, but maintains complete control over what Pods are created and how work is assigned to them.</p><h2 id="what-s-next">What's next</h2><ul><li>Learn about <a href="/docs/concepts/workloads/pods/">Pods</a>.</li><li>Read about different ways of running Jobs:<ul><li><a href="/docs/tasks/job/coarse-parallel-processing-work-queue/">Coarse Parallel Processing Using a Work Queue</a></li><li><a href="/docs/tasks/job/fine-parallel-processing-work-queue/">Fine Parallel Processing Using a Work Queue</a></li><li>Use an <a href="/docs/tasks/job/indexed-parallel-processing-static/">indexed Job for parallel processing with static work assignment</a></li><li>Create multiple Jobs based on a template: <a href="/docs/tasks/job/parallel-processing-expansion/">Parallel Processing using Expansions</a></li></ul></li><li>Follow the links within <a href="#clean-up-finished-jobs-automatically">Clean up finished jobs automatically</a>
+to learn more about how your cluster can clean up completed and / or failed tasks.</li><li><code>Job</code> is part of the Kubernetes REST API.
+Read the
+<a href="/docs/reference/kubernetes-api/batch/job-v1/">Job</a>
+object definition to understand the API for jobs.</li><li>Read about <a href="/docs/concepts/workloads/controllers/cron-jobs/"><code>CronJob</code></a>, which you
+can use to define a series of Jobs that will run based on a schedule, similar to
+the UNIX tool <code>cron</code>.</li><li>Practice how to configure handling of retriable and non-retriable pod failures
+using <code>podFailurePolicy</code>, based on the step-by-step <a href="/docs/tasks/job/pod-failure-policy/">examples</a>.</li><li>Learn about <a href="/docs/concepts/scheduling-eviction/gang-scheduling/">gang scheduling</a>
+for all-or-nothing scheduling of parallel Jobs.</li></ul><div class="td-page-meta__lastmod">Last modified July 31, 2026 at 9:45 PM PST: <a href="https://github.com/kubernetes/website/commit/a717a622bb2d629a2dacab6b405b9241bcc2e391">Address feedback (a717a622bb)</a></div>

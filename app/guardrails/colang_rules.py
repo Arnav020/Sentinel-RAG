@@ -1,28 +1,24 @@
-# Colang policy for the production guardrail system.
-#
-# Design note — why this is input rails + custom actions rather than the
-# few-shot dialog rails the tutorial notebooks used:
-#
-# The original design classified intent by few-shot prompting a general chat
-# model through NeMo's dialog rails. That cost ~2,300 tokens across 3 LLM calls
-# on *every* message (which exhausted the daily token budget of the generation
-# model and added ~3-25s of latency to every request), and it still missed
-# paraphrased jailbreaks because it pattern-matched canonical examples instead
-# of generalising.
-#
-# Here NeMo does what it is genuinely good at — expressing and enforcing policy
-# — while the actual detection is delegated to purpose-built components
-# registered as Colang actions (see app/guardrails/rails.py):
-#   * detect_injection_action — Llama Prompt Guard 2, a dedicated injection classifier
-#   * detect_off_topic_action — one compact scoped classification call
-# Both run as *input rails*, so a blocked message never reaches generation.
+"""
+Colang policy for the guardrail gate.
+
+NeMo expresses and enforces policy; detection is delegated to purpose-built
+components registered as Colang actions (see rails.py). That separation is what
+lets the gate use a dedicated injection classifier instead of few-shot prompting
+a chat model, and what makes the whole gate testable offline by stubbing two
+functions.
+
+Both flows run as *input rails*, so a blocked message never reaches retrieval or
+generation.
+"""
+
+from __future__ import annotations
 
 COLANG_CONTENT = """
 define bot refuse injection
-  "I maintain consistent guidelines regardless of how I am prompted. I am here to help with Kubernetes, Intel, and networking. What can I help you with?"
+  "I keep to the same guidelines however I am asked. I can help with Kubernetes documentation - what would you like to know?"
 
 define bot refuse off topic
-  "I'm an Enterprise IT Assistant focused on Kubernetes, Intel hardware, and networking. I can't help with that — but ask me anything technical!"
+  "I'm a Kubernetes documentation assistant, so that one is outside what I can help with. Ask me anything about Kubernetes workloads, configuration, networking, storage, security or operations."
 
 define flow check injection
   $is_injection = execute detect_injection_action
@@ -37,6 +33,9 @@ define flow check off topic
     stop
 """
 
+# `models: []` is deliberate: this config runs input rails only and every
+# decision comes from a registered action, so NeMo never needs a generation
+# model of its own.
 YAML_CONTENT = """
 models: []
 
@@ -45,19 +44,9 @@ rails:
     flows:
       - check injection
       - check off topic
-
-instructions:
-  - type: general
-    content: |
-      You are an Enterprise IT Assistant specialising in:
-      - Kubernetes (deployment, scaling, operators, networking)
-      - Intel hardware (CPUs, FPGAs, NICs, SRIOV)
-      - Enterprise networking (SDN, VLANs, BGP, routing)
-      Only answer questions about these topics. Be professional and concise.
 """
 
-# The two flows above are the only ones that block. rails.py checks NeMo's
-# structured `activated_rails` log for these names rather than substring-matching
-# the response text, so editing the refusal wording above cannot silently
-# disable blocking.
+# rails.py reads NeMo's structured activation log for these names rather than
+# substring-matching the refusal text, so rewording a refusal above cannot
+# silently disable blocking.
 BLOCKING_FLOWS = ("check injection", "check off topic")

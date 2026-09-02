@@ -1,0 +1,94 @@
+name: Evaluation
+
+# The judged tiers cost real tokens and are non-deterministic, so they do not
+# gate a pull request. They run nightly and on demand, and every run is
+# committed as a versioned artifact under evals/runs/ - a number nobody can
+# re-open is not evidence.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: Which tier to run
+        type: choice
+        default: all
+        options: [retrieval, behaviour, ragas, all]
+      pace:
+        description: Seconds between LLM calls (rate-limit pacing)
+        default: "1.5"
+
+permissions:
+  contents: write
+
+jobs:
+  evaluate:
+    name: Run evaluation suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      QDRANT_CLUSTER_ENDPOINT: ${{ secrets.QDRANT_CLUSTER_ENDPOINT }}
+      QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      # A separate key for the judge keeps eval traffic off the serving budget
+      # where the provider supports it; it falls back to GROQ_API_KEY.
+      JUDGE_GROQ: ${{ secrets.JUDGE_GROQ }}
+      LOGFIRE_ENABLED: "false"
+      LANGSMITH_TRACING: "false"
+      # Evaluation must never score a cached generation, or a repeat run grades
+      # the cache rather than the system.
+      USE_GATEWAY: "false"
+      GATEWAY_CACHE_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cache models
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/flashrank
+          key: models-${{ runner.os }}-mpnet-tinybert-v1
+
+      - name: Install deps
+        run: |
+          pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements-prod.txt
+          pip install -r requirements-eval.txt
+
+      - name: Verify dataset integrity before scoring
+        run: python -m tools.verify_dataset
+
+      - name: Run evaluation
+        run: |
+          python -m evals.run_eval \
+            --tier "${{ github.event.inputs.tier || 'all' }}" \
+            --pace "${{ github.event.inputs.pace || '1.5' }}"
+
+      - name: Check retrieval against baseline
+        run: python -m tools.check_baseline
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-run
+          path: evals/runs/
+
+      - name: Commit the run artifact
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add evals/runs/
+          if git diff --staged --quiet; then
+            echo "no new artifact"
+          else
+            git commit -m "eval: scheduled run $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi

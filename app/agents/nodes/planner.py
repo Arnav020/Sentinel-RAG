@@ -1,83 +1,106 @@
-from app.agents.state import AgentState
-from app.gateway import get_langchain_llm
+"""
+Planner: decide whether the turn needs retrieval, and if so rewrite the query.
+
+Two corrections over the previous version:
+
+  * The scope description is derived from the corpus rather than hardcoded. The
+    old prompt advertised Databricks, Intel hardware and enterprise networking,
+    none of which the knowledge base covers, so it routed questions to a store
+    that could not answer them.
+  * Conversation history is bounded (see `format_history`) instead of being
+    replayed in full on every turn.
+"""
+
+from __future__ import annotations
+
 import logfire
 
-# Portkey-backed LLM: fallback + cache + retry — same .invoke() interface as ChatGroq
-llm = get_langchain_llm(feature="planner")
+from app.agents.state import CONVERSATIONAL, AgentState, format_history, latest_user_message
+from app.config import settings
+from app.gateway import LLMError, complete
+from app.services.scope import get_scope
 
-def planner_node(state: AgentState):
-    """
-    The Planner determines if a search is needed based on the ENTIRE conversation.
-    """
-    # Get the conversation history (excluding the latest message)
-    history = ""
-    for msg in state["messages"][:-1]:
-        role = "User" if msg["role"] == "user" else "Assistant"
-        history += f"{role}: {msg['content']}\n"
-    
-    user_message = state["messages"][-1]["content"] if state["messages"] else ""
-    
-    prompt = f"""
-    You are an intelligent Assistant Planner. 
-    Analyze the conversation history and the latest user message.
-    
-    CONVERSATION HISTORY:
-    {history}
-    
-    LATEST MESSAGE:
-    "{user_message}"
-    
-    Task:
-    1. Respond with 'CONVERSATIONAL' ONLY if the latest message is a greeting
-       (hi, hello, thanks, bye) or can be answered using ONLY the conversation
-       history above (e.g. "what did I just ask?", "what is my name").
-    2. For ANY question seeking factual or technical information, output a
-       refined search query. The knowledge base covers Kubernetes (Jobs,
-       CronJobs, work queues, autoscaling, monitoring), Databricks job
-       management (CLI, SDK, REST API), Intel hardware, and enterprise
-       networking.
+_PROMPT = """You rewrite user messages into search queries for a {subject} documentation assistant.
 
-    When in doubt, prefer the search query — answering from documentation is
-    always safer than answering from memory.
+The knowledge base covers:
+{scope}
 
-    The search query is embedded and matched against documentation chunks, so it
-    must be a short natural-language phrase of keywords (3-12 words).
-    Do NOT output a URL, a file path, an explanation, or a full sentence.
+Decide between two outputs:
 
-    Examples:
-      "hi there"                                        -> CONVERSATIONAL
-      "what did I just ask?"                            -> CONVERSATIONAL
-      "How do I monitor a Kubernetes Job?"              -> Kubernetes Job status monitoring
-      "how does HPA scale my pods"                      -> Kubernetes horizontal pod autoscaling
-      "Which Databricks CLI command lists jobs?"        -> Databricks CLI job management commands
-      "When should I use the REST API over the SDK?"    -> Databricks REST API versus SDK usage
+1. Reply with exactly CONVERSATIONAL if the latest message is a greeting, a
+   thanks or farewell, a question about your own capabilities, or something
+   answerable purely from the conversation history (for example "what did I
+   just ask?").
 
-    Output ONLY 'CONVERSATIONAL' or the search query.
-    """
-    
-    with logfire.span("🧠 Planner Decision"):
+2. Otherwise reply with a search query: a short noun phrase of 3-12 words in
+   the vocabulary the documentation itself would use. Resolve pronouns and
+   follow-ups against the history, so "how do I scale it?" after a question
+   about Deployments becomes "scale a Deployment replicas".
+
+Reply with the query alone. No explanation, no quotes, no URL, no file path,
+and never a full sentence.
+
+Examples:
+  "hi there"                                 -> CONVERSATIONAL
+  "what did I just ask?"                     -> CONVERSATIONAL
+  "How do I monitor a Job?"                  -> Kubernetes Job status monitoring
+  "how does HPA scale my pods"               -> HorizontalPodAutoscaler scaling behaviour
+  "what about memory?"  (after CPU limits)   -> container memory limits and requests
+  "tell me about the weather"                -> weather forecast
+
+Note the last example: rewrite the query even when it is clearly outside the
+knowledge base. Deciding what the documentation covers is not your job - the
+retrieval stage measures that directly and declines when nothing matches."""
+
+
+def planner_node(state: AgentState) -> dict:
+    messages = state.get("messages", [])
+    user_message = latest_user_message(messages)
+    history = format_history(messages)
+    scope = get_scope()
+
+    system = _PROMPT.format(subject=scope.subject, scope=scope.bullet_list())
+    user = f"CONVERSATION HISTORY:\n{history or '(none)'}\n\nLATEST MESSAGE:\n{user_message}"
+
+    with logfire.span("Planner"):
         try:
-            decision = llm.invoke(prompt).content.strip()
-        except Exception as e:
-            # Degrade instead of crashing the whole request: treat the raw
-            # message as a search query rather than failing the turn outright.
-            logfire.error(f"Planner LLM call failed, defaulting to raw query: {e}")
+            result = complete(
+                [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                model=settings.PLANNER_MODEL,
+                temperature=0.0,
+                max_tokens=settings.CLASSIFIER_MAX_TOKENS,
+                feature="planner",
+            )
+            decision = result.content.strip()
+        except LLMError as e:
+            # Degrade rather than fail the turn: the raw message is a usable, if
+            # unrefined, search query. Logged at error so the degradation is
+            # visible rather than silently changing answer quality.
+            logfire.error(f"Planner unavailable, using the raw message as the query: {e}")
             decision = user_message
-        logfire.info(f"Intent identified: {decision}")
 
-    # Normalize before comparing — LLMs don't always emit the bare token
-    # exactly ("CONVERSATIONAL.", quoted, different case, etc.).
-    is_conversational = decision.strip().strip(".,!?\"'").upper() == "CONVERSATIONAL"
+        # Normalise: models do not reliably emit the bare token.
+        normalised = decision.strip().strip(".,!?\"'`").upper()
+        is_conversational = normalised == "CONVERSATIONAL"
+
+        # A multi-line or over-long reply means the model explained itself
+        # instead of answering; the first line is the usable part.
+        if not is_conversational:
+            decision = decision.splitlines()[0].strip().strip("\"'`")
+            if len(decision) > 200 or not decision:
+                decision = user_message
+
+        logfire.info(f"Planner decision: {'CONVERSATIONAL' if is_conversational else decision}")
 
     if is_conversational:
         return {
-            "current_query": "CONVERSATIONAL",
-            "status": "Handling conversationally (using memory)...",
-            "plan": ["Intent: Conversational/Memory", "Retrieval: Skipped"]
+            "current_query": CONVERSATIONAL,
+            "status": "Answering from the conversation.",
+            "plan": ["Intent: conversational", "Retrieval: skipped"],
         }
-    
+
     return {
         "current_query": decision,
-        "status": f"Technical research needed. Searching for: {decision}",
-        "plan": ["Intent: Technical", f"Search Term: {decision}"]
+        "status": f"Searching the knowledge base for: {decision}",
+        "plan": ["Intent: documentation lookup", f"Search query: {decision}"],
     }
