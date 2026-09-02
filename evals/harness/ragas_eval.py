@@ -300,6 +300,19 @@ async def _score_all(
             }
             print(f"\n    {name}: ALL SAMPLES FAILED")
 
+        # Namespaced by judge. A second run into the same directory - a
+        # different judge, a resumed metric, a re-scored subset - previously
+        # overwrote the first run's per-item scores, and the detail behind an
+        # already-reported aggregate was silently lost. The aggregate survived
+        # in summary.json, which is worse than losing both: a number with no
+        # remaining evidence behind it.
+        judge_slug = settings.JUDGE_MODEL.replace("/", "_")
+        (out_dir / f"ragas_per_item.{judge_slug}.json").write_text(
+            json.dumps(per_item, indent=2), encoding="utf-8"
+        )
+        (out_dir / f"ragas_summary.{judge_slug}.json").write_text(
+            json.dumps(summary, indent=2), encoding="utf-8"
+        )
         (out_dir / "ragas_per_item.json").write_text(
             json.dumps(per_item, indent=2), encoding="utf-8"
         )
