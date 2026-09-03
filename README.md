@@ -420,9 +420,7 @@ to a corpus, not universal.
 
 ## Engineering notes
 
-A full account of what was wrong with the previous version and how each item was
-fixed is in [`DOCS/AUDIT_REMEDIATION.md`](DOCS/AUDIT_REMEDIATION.md), including
-four **known limitations** that are measured but not solved. The short version:
+What was wrong with the previous version, and how each item was fixed:
 
 | Finding | Impact |
 |---|---|

@@ -64,10 +64,6 @@ def _get_ranker() -> Ranker:
     return _ranker
 
 
-class RerankerUnavailable(RuntimeError):
-    """The cross-encoder could not score; scores are cosine, not cross-encoder."""
-
-
 # Set when a rerank attempt fails, so `select_relevant` knows the scores it is
 # thresholding are on the cosine scale rather than the cross-encoder scale.
 _degraded = False
@@ -219,23 +215,3 @@ def select_relevant(
             f"(top={top_score:.4f} < {threshold}); abstaining."
         )
     return kept, top_score
-
-
-def rerank_documents(query: str, documents: list[str], top_n: int = 5) -> list[str]:
-    """
-    Plain-string helper retained for tooling and tests.
-
-    The production path uses `select_relevant`, which preserves identity and
-    applies the relevance decision.
-    """
-    if not documents:
-        return []
-    try:
-        ranker = _get_ranker()
-        passages = [{"id": i, "text": d} for i, d in enumerate(documents)]
-        with _rank_lock:
-            results = ranker.rerank(RerankRequest(query=query, passages=passages))
-        return [documents[int(r["id"])] for r in results[:top_n]]
-    except Exception as e:
-        logfire.error(f"Reranking failed: {e}")
-        return documents[:top_n]

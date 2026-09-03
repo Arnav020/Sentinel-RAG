@@ -249,23 +249,3 @@ def chunk_document(doc: Document) -> list[Chunk]:
 
     logfire.info(f"Generated {len(merged)} chunks (structure-aware, overlap={overlap}).")
     return merged
-
-
-def chunk_text(text: str, chunk_size: int | None = None) -> list[str]:
-    """
-    Backwards-compatible helper for plain strings.
-
-    Kept because tests and ad-hoc tooling want to chunk a bare string without
-    constructing a Document.
-    """
-    budget = chunk_size or settings.CHUNK_SIZE
-    doc = Document(
-        filename="",
-        blocks=[Block(text=p, kind=KIND_PROSE) for p in re.split(r"\n\s*\n", text) if p.strip()],
-    )
-    original = settings.CHUNK_SIZE
-    try:
-        settings.CHUNK_SIZE = budget
-        return [c.body for c in chunk_document(doc)]
-    finally:
-        settings.CHUNK_SIZE = original

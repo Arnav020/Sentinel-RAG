@@ -172,8 +172,3 @@ def distinct_payload_values(field: str, limit: int = 20000) -> dict[str, int]:
         if offset is None:
             break
     return dict(sorted(counts.items(), key=lambda kv: -kv[1]))
-
-
-# Backwards-compatible alias used by older call sites and notebooks.
-def search_enterprise_knowledge(query: str, limit: int | None = None):
-    return search(query, limit=limit)

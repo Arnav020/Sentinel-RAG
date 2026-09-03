@@ -31,11 +31,23 @@ skills/
 *.log
 docker-build.log
 
+# Source corpus. Not version controlled: 49 vendored HTML pages made up 85% of
+# the repository and rendered it "84.8% HTML" on GitHub, which describes the
+# scraped documentation rather than the project. It is fully reproducible -
+# rebuild with `python tools/fetch_corpus.py`.
+DATA/
+
+# Superseded architecture docs. The README is the single source of truth; these
+# still described Portkey, withdrawn Llama models and the Streamlit UI, none of
+# which the system uses. Recoverable from git history if ever needed.
+DOCS/
+
+# Editor and agent tooling, machine-specific (absolute .venv paths).
+.claude/
+
 # ---------------------------------------------------------------------------
 # Deliberately NOT ignored, and worth stating why:
 #
-#   DATA/kubernetes/          the corpus IS the product scope, so it is version
-#                             controlled. Rebuild it with tools/fetch_corpus.py.
 #   evals/dataset/            the golden dataset is ground truth; a change to it
 #                             must show up in review like any other change.
 #   evals/runs/               evaluation artifacts. Published numbers that
@@ -44,8 +56,3 @@ docker-build.log
 #                             Streamlit session state.
 #   evals/baseline*.json      the thresholds CI gates on.
 # ---------------------------------------------------------------------------
-
-# The original filler corpus, superseded by the curated Kubernetes corpus.
-DATA/noisy_data/
-DATA/noisy_sample_10/
-DATA/true_data/
