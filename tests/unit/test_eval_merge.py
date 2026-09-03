@@ -10,6 +10,8 @@ These tests pin the merge rules that make partial runs safe.
 
 from __future__ import annotations
 
+import pytest
+
 from evals.harness.ragas_eval import better_of, merge_per_item, merge_summaries
 
 
@@ -136,3 +138,46 @@ class TestTokenAccounting:
         record_usage("test/model-c", 0)
         record_usage("test/model-c", -5)
         assert tokens_used_since("test/model-c", 60) == before
+
+
+class TestRunItemsAbortsOnDailyQuota:
+    """
+    The abort path itself needs a test. It shipped with a syntax error that
+    every local check missed, because nothing executed it - the one code path
+    whose whole job is to fire when a long, expensive run goes wrong is also the
+    path least likely to be exercised by accident.
+    """
+
+    @staticmethod
+    def _harness(monkeypatch, exhausted_after: int):
+        from evals.harness import pipeline
+
+        seen = {"n": 0}
+
+        def fake_run_item(item, agent=None, with_guardrails=True):
+            seen["n"] += 1
+            return {"id": item["id"], "error": "", "answer": "ok"}
+
+        def fake_exhausted(within_seconds=600):
+            return {"openai/gpt-oss-120b"} if seen["n"] >= exhausted_after else set()
+
+        monkeypatch.setattr(pipeline, "build_graph", lambda: object())
+        monkeypatch.setattr(pipeline, "run_item", fake_run_item)
+        monkeypatch.setattr(pipeline, "daily_quota_exhausted", fake_exhausted)
+        return pipeline
+
+    def test_it_stops_and_keeps_what_it_gathered(self, monkeypatch):
+        pipeline = self._harness(monkeypatch, exhausted_after=3)
+        items = [{"id": f"A{i:03d}"} for i in range(10)]
+
+        with pytest.raises(pipeline.DailyQuotaExhausted) as excinfo:
+            pipeline.run_items(items, pace_seconds=0.0)
+
+        assert len(excinfo.value.records) == 3
+        assert "openai/gpt-oss-120b" in str(excinfo.value)
+        assert "3 of 10" in str(excinfo.value)
+
+    def test_a_healthy_run_is_untouched(self, monkeypatch):
+        pipeline = self._harness(monkeypatch, exhausted_after=999)
+        items = [{"id": f"A{i:03d}"} for i in range(5)]
+        assert len(pipeline.run_items(items, pace_seconds=0.0)) == 5

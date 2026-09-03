@@ -164,9 +164,7 @@ def run_behaviour(dataset: dict, out_dir: Path, pace: float) -> dict:
         # regression, which is worse than reporting nothing.
         aborted = str(e)
         records = getattr(e, "records", [])
-        print(f"
-
-  ABORTED: {aborted}")
+        print(f"\n\n  ABORTED: {aborted}")
 
     # Grade the hard negatives: retrieval scores them as relevant, so only the
     # generator can decline. Needs a judge call per item.
