@@ -132,11 +132,53 @@ def score_chunks(query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChun
         return sorted(chunks, key=lambda c: c.rerank_score or 0.0, reverse=True)
 
 
+def score_chunks_multi(queries: list[str], chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    """
+    Score against several phrasings of the same question, keeping the best.
+
+    A cross-encoder is far more phrasing-sensitive than it looks. The passage
+    saying "Only a RestartPolicy equal to Never or OnFailure is allowed" scores
+    **0.0003** against "What restart policies can a Kubernetes Job use?" and
+    **0.9997** against "Job pod template restartPolicy Never OnFailure allowed"
+    - same model, same passage, same candidate pool. Reranking only the prose
+    form buried the one passage that answered the question at rank 65 while
+    thirteen passages about pod *failure* policy sat above it at 0.98+.
+
+    A larger cross-encoder does not fix this: ms-marco-MiniLM-L-12-v2 still
+    placed it at rank 35 (0.0063) and cost 5.2s per rerank against TinyBERT's
+    0.24s. The cheap, effective fix is to ask the same model the same question
+    more than one way and take the maximum, which is what this does.
+
+    Max, not mean, deliberately: a passage that decisively answers one phrasing
+    is relevant even if another phrasing misses it. The risk is inflating scores
+    on out-of-domain questions, but the alternative phrasings are derived from
+    the user's own question, so an off-topic question yields off-topic keywords
+    and both scores stay low.
+    """
+    unique = list(dict.fromkeys(q.strip() for q in queries if q and q.strip()))
+    if not unique or not chunks:
+        return score_chunks(unique[0] if unique else "", chunks)
+
+    ordered = score_chunks(unique[0], chunks)
+    best = {id(c): c.rerank_score or 0.0 for c in ordered}
+
+    for alt in unique[1:]:
+        score_chunks(alt, chunks)
+        for c in chunks:
+            key = id(c)
+            best[key] = max(best.get(key, 0.0), c.rerank_score or 0.0)
+
+    for c in chunks:
+        c.rerank_score = best.get(id(c), c.rerank_score or 0.0)
+    return sorted(chunks, key=lambda c: c.rerank_score or 0.0, reverse=True)
+
+
 def select_relevant(
     query: str,
     chunks: list[RetrievedChunk],
     top_n: int | None = None,
     threshold: float | None = None,
+    extra_queries: list[str] | None = None,
 ) -> tuple[list[RetrievedChunk], float]:
     """
     Rerank, then keep only what is actually relevant.
@@ -144,10 +186,17 @@ def select_relevant(
     Returns `(kept, top_score)`. An empty list is a meaningful answer - it means
     the knowledge base does not cover the question - and callers must treat it
     as such rather than as an error.
+
+    `extra_queries` are alternative phrasings of the same question; see
+    `score_chunks_multi` for why one phrasing is not enough.
     """
     top_n = top_n if top_n is not None else settings.RETRIEVAL_TOP_N
 
-    ordered = score_chunks(query, chunks)
+    ordered = (
+        score_chunks_multi([query, *extra_queries], chunks)
+        if extra_queries
+        else score_chunks(query, chunks)
+    )
     if not ordered:
         return [], 0.0
 

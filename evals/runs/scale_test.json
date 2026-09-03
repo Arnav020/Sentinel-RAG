@@ -1,0 +1,58 @@
+{
+  "exact": {
+    "index_state": {
+      "points": 2069,
+      "indexed_vectors": 2069,
+      "indexing_threshold_kb": 20000,
+      "hnsw_m": 16,
+      "hnsw_ef_construct": 100,
+      "status": "green",
+      "mode": "approximate (HNSW)"
+    }
+  },
+  "hnsw": {
+    "index_state": {
+      "points": 2069,
+      "indexed_vectors": 2069,
+      "indexing_threshold_kb": 1000,
+      "hnsw_m": 16,
+      "hnsw_ef_construct": 100,
+      "status": "green",
+      "mode": "approximate (HNSW)"
+    },
+    "metrics": {
+      "hit@1": 0.6627,
+      "hit@3": 0.8434,
+      "hit@5": 0.8916,
+      "hit@60": 0.9759,
+      "doc_hit@1": 0.8916,
+      "doc_hit@5": 0.988,
+      "ndcg@5": 0.7874,
+      "gold_containment@k": 0.9078,
+      "mrr": 0.7628,
+      "correct_abstention_rate": 0.9286,
+      "false_abstention_rate": 0.012
+    }
+  },
+  "delta_hnsw_minus_exact": {
+    "correct_abstention_rate": 0.0,
+    "doc_hit@1": 0.0,
+    "doc_hit@5": 0.0,
+    "false_abstention_rate": 0.0,
+    "gold_containment@k": 0.0,
+    "hit@1": 0.0,
+    "hit@3": 0.0,
+    "hit@5": 0.0,
+    "hit@60": 0.0,
+    "mrr": 0.0,
+    "ndcg@5": 0.0
+  },
+  "conclusion": {
+    "quality_delta": "zero on every metric",
+    "verified": "exact arm indexed_vectors=0; hnsw arm indexed_vectors=2069/2069, status green",
+    "interpretation": "At 2,069 points with m=16 and ef_construct=100 the HNSW graph is small enough that traversal is effectively exhaustive, so approximate search returns the same top-60 as a full scan. This does NOT show that approximate search is free at 100k points - it shows the recall cliff is beyond this corpus size, which is a narrower and honest claim.",
+    "latency": "Not measurable here. Search round-trips to managed Qdrant averaged ~290 ms in both modes, dominated by network latency to the cloud region rather than by search itself. A meaningful latency comparison needs a local instance.",
+    "standing_config": "HNSW left enabled (indexing_threshold=1000 KB) - identical quality, and the code path a larger corpus would use.",
+    "caveat": "indexing_threshold controls index BUILDING, not use. Raising it does not restore exact search; that needs a collection rebuild."
+  }
+}

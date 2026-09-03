@@ -1,165 +1,268 @@
 /* ==========================================================================
-   Sentinel-RAG — client
-   No framework, no build step, no external requests: the page is served from
-   the same FastAPI process that answers /query.
+   Sentinel RAG — client
+
+   Talks to exactly four endpoints and invents nothing:
+     POST /session  -> { session_id }
+     POST /query    -> { answer, abstained, blocked, sources[], top_score,
+                         answered_by, thought_process[], conversational, ... }
+     GET  /scope    -> { subject, points, topics[] }
+     GET  /health   -> { status, guardrails, corpus{}, models{} }
+
+   Conversation history is kept in localStorage and labelled "local" in the UI,
+   because the server deliberately has no chat persistence - sessions are
+   in-process and expire. Showing a server-backed history would be a lie.
    ========================================================================== */
 (() => {
   'use strict';
 
-  // Guardrails + LangGraph + two LLM calls can legitimately exceed 60s.
-  // The previous client timed out at 60s and reported a healthy backend as
-  // offline, so this is deliberately generous.
   const REQUEST_TIMEOUT_MS = 120_000;
   const HEALTH_INTERVAL_MS = 30_000;
+  const HISTORY_KEY = 'sentinel.history.v1';
+  const THEME_KEY = 'sentinel.theme';
+  const HISTORY_LIMIT = 40;
 
   const $ = (id) => document.getElementById(id);
   const el = {
-    app: document.querySelector('.app'),
-    thread: $('thread'),
-    welcome: $('welcome'),
-    form: $('composer'),
-    input: $('input'),
-    send: $('send'),
-    status: $('status'),
-    statusLabel: $('statusLabel'),
-    threadLabel: $('threadLabel'),
-    turnCount: $('turnCount'),
-    newChat: $('newChat'),
-    themeToggle: $('themeToggle'),
-    menuToggle: $('menuToggle'),
-    scrim: $('scrim'),
-    suggestions: $('suggestions'),
-    topbarHint: $('topbarHint'),
+    app: $('app'), rail: $('rail'), scrim: $('scrim'),
+    railOpen: $('railOpen'), railClose: $('railClose'),
+    newChat: $('newChat'), historySearch: $('historySearch'),
+    historyList: $('historyList'), historyEmpty: $('historyEmpty'),
+    topics: $('topics'), scopeSummary: $('scopeSummary'),
+    statusBar: $('statusBar'), statusDot: $('statusDot'), statusText: $('statusText'),
+    thread: $('thread'), composer: $('composer'), input: $('input'),
+    send: $('send'), charCount: $('charCount'), suggestions: $('suggestions'),
+    turnPill: $('turnPill'), topbarHint: $('topbarHint'),
+    inspector: $('inspector'), inspectorToggle: $('inspectorToggle'),
+    sourcesList: $('sourcesList'), sourcesEmpty: $('sourcesEmpty'),
+    contextList: $('contextList'), contextEmpty: $('contextEmpty'),
+    traceList: $('traceList'), traceEmpty: $('traceEmpty'),
+    tabCountSources: $('tabCountSources'),
+    queryInfo: $('queryInfo'),
+    qiOutcome: $('qiOutcome'), qiRelevance: $('qiRelevance'),
+    qiPassages: $('qiPassages'), qiModel: $('qiModel'), qiTime: $('qiTime'),
+    welcomeTemplate: $('welcomeTemplate'),
   };
 
   // Conversation ids are issued by the server and are unguessable. The client
   // never chooses one: a client-chosen id let any caller read another user's
   // conversation by guessing it.
   let sessionId = null;
+  let listEl = null;
+  let inFlight = null;
   let turns = 0;
-  let inFlight = null;      // AbortController for the active request
-  let listEl = null;        // lazily-created message container
+  let activeChatId = null;
+  let history = [];
 
-  /* ------------------------------------------------------------ utils --- */
+  /* ------------------------------------------------------------ utilities */
 
-  const uuid = () =>
-    (crypto.randomUUID?.() ??
-      `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`);
-
-  /** Escape first, always. Everything downstream may only add tags we authored. */
   function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    return String(s ?? '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  /** Only http(s) and mailto survive — blocks javascript: and data: URLs. */
+  // Only http(s) and mailto survive. Anything else - javascript:, data: - is
+  // dropped rather than rendered as a link.
   function safeHref(url) {
-    const trimmed = String(url).trim();
+    const trimmed = String(url ?? '').trim();
     return /^(https?:\/\/|mailto:)/i.test(trimmed) ? escapeHtml(trimmed) : null;
   }
 
-  /* --------------------------------------------------------- markdown --- */
-  /* A deliberately small subset — headings, emphasis, code, lists, links —
-     covering what the model actually emits. Input is escaped before any of
-     this runs, so no model output can inject markup. */
-
   function inline(text) {
     let out = escapeHtml(text);
-    out = out.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
+    out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
     out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    out = out.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?]|$)/g, '$1<em>$2</em>');
-    out = out.replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?]|$)/g, '$1<em>$2</em>');
-    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
-      const href = safeHref(url);
-      return href
-        ? `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`
-        : m;
+    out = out.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, href) => {
+      const safe = safeHref(href);
+      return safe ? `<a href="${safe}" target="_blank" rel="noopener noreferrer">${label}</a>` : label;
     });
+    // The generator is instructed to cite passages as [2]; render those as chips
+    // so a claim visibly points at a source.
+    out = out.replace(/\[(\d{1,2})\](?!\()/g, '<span class="cite">$1</span>');
     return out;
   }
 
   function renderBlocks(src) {
-    const lines = src.split('\n');
-    let html = '';
-    let list = null;          // 'ul' | 'ol' | null
-    let para = [];
+    const lines = String(src ?? '').split('\n');
+    const html = [];
+    let list = null;
 
-    const flushPara = () => {
-      if (para.length) { html += `<p>${inline(para.join(' '))}</p>`; para = []; }
-    };
-    const closeList = () => { if (list) { html += `</${list}>`; list = null; } };
+    const closeList = () => { if (list) { html.push(`</${list}>`); list = null; } };
 
     for (const raw of lines) {
       const line = raw.trimEnd();
+      if (!line.trim()) { closeList(); continue; }
 
-      if (!line.trim()) { flushPara(); closeList(); continue; }
+      const h = line.match(/^(#{1,4})\s+(.*)$/);
+      if (h) { closeList(); html.push(`<h3>${inline(h[2])}</h3>`); continue; }
 
-      const heading = line.match(/^(#{1,3})\s+(.*)$/);
-      if (heading) {
-        flushPara(); closeList();
-        const lvl = heading[1].length;
-        html += `<h${lvl}>${inline(heading[2])}</h${lvl}>`;
-        continue;
+      const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+      if (ol) {
+        if (list !== 'ol') { closeList(); html.push('<ol>'); list = 'ol'; }
+        html.push(`<li>${inline(ol[1])}</li>`); continue;
       }
 
       const ul = line.match(/^\s*[-*+]\s+(.*)$/);
-      const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
-      if (ul || ol) {
-        flushPara();
-        const want = ul ? 'ul' : 'ol';
-        if (list !== want) { closeList(); html += `<${want}>`; list = want; }
-        html += `<li>${inline((ul || ol)[1])}</li>`;
-        continue;
+      if (ul) {
+        if (list !== 'ul') { closeList(); html.push('<ul>'); list = 'ul'; }
+        html.push(`<li>${inline(ul[1])}</li>`); continue;
       }
 
       closeList();
-      para.push(line.trim());
+      html.push(`<p>${inline(line)}</p>`);
     }
-    flushPara(); closeList();
-    return html;
+    closeList();
+    return html.join('');
   }
 
   function renderMarkdown(src) {
-    // Split on fenced blocks so their contents are never treated as markdown.
     const parts = String(src ?? '').split(/```/);
-    let html = '';
+    let out = '';
     parts.forEach((part, i) => {
-      if (i % 2 === 1) {
-        const nl = part.indexOf('\n');
-        const lang = (nl === -1 ? '' : part.slice(0, nl)).trim();
-        const code = nl === -1 ? part : part.slice(nl + 1);
-        html +=
-          `<div class="codeblock">` +
-            `<div class="codeblock__bar">` +
-              `<span class="codeblock__lang">${escapeHtml(lang || 'text')}</span>` +
-              `<button class="copy" type="button" data-copy>Copy</button>` +
-            `</div>` +
-            `<pre><code>${escapeHtml(code.replace(/\n$/, ''))}</code></pre>` +
-          `</div>`;
-      } else {
-        html += renderBlocks(part);
-      }
+      if (i % 2 === 0) { out += renderBlocks(part); return; }
+      const nl = part.indexOf('\n');
+      const lang = nl === -1 ? '' : part.slice(0, nl).trim();
+      const code = nl === -1 ? part : part.slice(nl + 1);
+      out +=
+        '<div class="codeblock"><div class="codeblock__bar">' +
+        `<span class="codeblock__lang">${escapeHtml(lang || 'text')}</span>` +
+        '<button class="codeblock__copy" type="button">Copy</button></div>' +
+        `<pre><code>${escapeHtml(code.replace(/\n$/, ''))}</code></pre></div>`;
     });
-    return html;
+    return out;
   }
 
-  /* ------------------------------------------------------------ icons --- */
-  const shieldSvg =
-    `<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 5 8v8c0 6.6 4.5 12.7 11 14 6.5-1.3 11-7.4 11-14V8z"/></svg>`;
-  const warnSvg =
-    `<svg class="notice__icon" viewBox="0 0 16 16" fill="none" stroke-width="1.6" aria-hidden="true">` +
-    `<path d="M8 2.2 1.6 13.4h12.8z" stroke-linejoin="round"/><path d="M8 6.6v3.1" stroke-linecap="round"/>` +
-    `<circle cx="8" cy="11.4" r=".75" fill="currentColor" stroke="none"/></svg>`;
-  const errSvg =
-    `<svg class="notice__icon" viewBox="0 0 16 16" fill="none" stroke-width="1.6" aria-hidden="true">` +
-    `<circle cx="8" cy="8" r="6.2"/><path d="M8 4.9v3.6" stroke-linecap="round"/>` +
-    `<circle cx="8" cy="11.1" r=".75" fill="currentColor" stroke="none"/></svg>`;
+  const ICON = {
+    shield: '<svg viewBox="0 0 32 32" fill="none"><path d="M16 3l11 5.5v9C27 24 22 28.5 16 30 10 28.5 5 24 5 17.5v-9z" stroke="currentColor" stroke-width="1.6"/><path d="M11 16.4l3.4 3.4L21 13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    warn: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 2.6 14.4 13H1.6z" stroke-linejoin="round"/><path d="M8 6.6v3M8 11.4h.01" stroke-linecap="round"/></svg>',
+    err: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8v3.6M8 10.9h.01" stroke-linecap="round"/></svg>',
+    copy: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.4" y="5.4" width="8" height="8" rx="1.6"/><path d="M10.6 5.4V4a1.6 1.6 0 0 0-1.6-1.6H4A1.6 1.6 0 0 0 2.4 4v5a1.6 1.6 0 0 0 1.6 1.6h1.4"/></svg>',
+    trash: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4.4h10M6.4 4.4V3.2A1 1 0 0 1 7.4 2.2h1.2a1 1 0 0 1 1 1v1.2M4.4 4.4l.5 8a1 1 0 0 0 1 .95h4.2a1 1 0 0 0 1-.95l.5-8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  };
 
-  /* --------------------------------------------------------- thread ----- */
+  /* -------------------------------------------------------------- theme */
+
+  function applyTheme(mode) {
+    document.documentElement.setAttribute('data-theme', mode);
+    document.querySelectorAll('[data-theme-set]').forEach((b) =>
+      b.classList.toggle('is-active', b.dataset.themeSet === mode));
+    try { localStorage.setItem(THEME_KEY, mode); } catch { /* storage unavailable */ }
+  }
+
+  function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch { /* ignore */ }
+    if (saved !== 'light' && saved !== 'dark') {
+      saved = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    applyTheme(saved);
+    document.querySelectorAll('[data-theme-set]').forEach((b) =>
+      b.addEventListener('click', () => applyTheme(b.dataset.themeSet)));
+  }
+
+  /* ------------------------------------------------------ local history */
+
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      history = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(history)) history = [];
+    } catch { history = []; }
+  }
+
+  function saveHistory() {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, HISTORY_LIMIT)));
+    } catch { /* quota or private mode - history is a convenience, not state */ }
+  }
+
+  function relativeTime(ts) {
+    const mins = Math.floor((Date.now() - ts) / 60000);
+    if (mins < 1) return 'now';
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    const days = Math.floor(hrs / 24);
+    return days < 7 ? `${days}d` : new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  function renderHistory() {
+    const filter = (el.historySearch.value || '').toLowerCase().trim();
+    const shown = history.filter((c) => !filter || c.title.toLowerCase().includes(filter));
+
+    el.historyList.innerHTML = '';
+    el.historyEmpty.hidden = shown.length > 0;
+    el.historyEmpty.textContent = history.length
+      ? 'No conversations match that search.'
+      : 'No conversations yet.';
+
+    for (const chat of shown) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'history__item' + (chat.id === activeChatId ? ' is-active' : '');
+      btn.innerHTML =
+        `<span class="history__label">${escapeHtml(chat.title)}</span>` +
+        `<span class="history__time">${escapeHtml(relativeTime(chat.at))}</span>`;
+      btn.addEventListener('click', () => openChat(chat.id));
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'history__del';
+      del.title = 'Delete conversation';
+      del.setAttribute('aria-label', `Delete "${chat.title}"`);
+      del.innerHTML = ICON.trash;
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        history = history.filter((c) => c.id !== chat.id);
+        saveHistory();
+        if (chat.id === activeChatId) newConversation();
+        else renderHistory();
+      });
+
+      btn.appendChild(del);
+      li.appendChild(btn);
+      el.historyList.appendChild(li);
+    }
+  }
+
+  function recordTurn(question, record) {
+    let chat = history.find((c) => c.id === activeChatId);
+    if (!chat) {
+      chat = { id: activeChatId, title: question.slice(0, 68), at: Date.now(), turns: [] };
+      history.unshift(chat);
+    }
+    chat.at = Date.now();
+    chat.turns.push({ q: question, r: record });
+    // Move to the top so the most recent conversation is first.
+    history = [chat, ...history.filter((c) => c.id !== chat.id)].slice(0, HISTORY_LIMIT);
+    saveHistory();
+    renderHistory();
+  }
+
+  function openChat(id) {
+    const chat = history.find((c) => c.id === id);
+    if (!chat) return;
+    activeChatId = id;
+    if (listEl) { listEl.remove(); listEl = null; }
+    el.thread.innerHTML = '';
+    turns = 0;
+    for (const t of chat.turns) {
+      addUser(t.q);
+      const node = addPending();
+      fillAnswer(node, t.r, { replay: true });
+      turns += 1;
+    }
+    setTurnPill();
+    // A replayed conversation has no live server session behind it, so the next
+    // question starts a fresh one rather than pretending the model remembers.
+    sessionId = null;
+    renderHistory();
+    if (window.innerWidth <= 860) closeRail();
+  }
+
+  /* ------------------------------------------------------------- thread */
 
   function ensureList() {
     if (!listEl) {
@@ -171,20 +274,24 @@
   }
 
   function hideWelcome() {
-    if (el.welcome && el.welcome.isConnected) el.welcome.remove();
+    const w = $('welcome');
+    if (w) w.remove();
   }
 
   function scrollToEnd() {
-    // rAF so layout has settled before we measure.
-    requestAnimationFrame(() => {
-      el.thread.scrollTop = el.thread.scrollHeight;
-    });
+    requestAnimationFrame(() => { el.thread.scrollTop = el.thread.scrollHeight; });
+  }
+
+  function showWelcome() {
+    const tpl = el.welcomeTemplate.content.cloneNode(true);
+    el.thread.appendChild(tpl);
+    applyScopeFacts();
   }
 
   function addUser(text) {
     hideWelcome();
     const node = document.createElement('div');
-    node.className = 'msg msg--user msg--enter';
+    node.className = 'msg msg--user';
     node.innerHTML = `<div class="msg__bubble">${escapeHtml(text)}</div>`;
     ensureList().appendChild(node);
     scrollToEnd();
@@ -192,153 +299,244 @@
 
   function addPending() {
     const node = document.createElement('div');
-    node.className = 'msg msg--enter';
+    node.className = 'msg msg--bot';
     node.innerHTML =
-      `<div class="msg__role"><span class="msg__avatar">${shieldSvg}</span>Sentinel</div>` +
-      `<div class="thinking"><span class="thinking__dots"><i></i><i></i><i></i></span>` +
-      `<span>Searching your documentation…</span></div>`;
+      `<div class="msg__role"><span class="msg__avatar">${ICON.shield}</span>Sentinel</div>` +
+      '<div class="msg__body"><div class="typing"><span></span><span></span><span></span></div></div>';
     ensureList().appendChild(node);
     scrollToEnd();
     return node;
   }
 
-  /** Retrieval emits "SOURCE: <file>\nCONTENT: <text>" — split it for display. */
-  function parseSource(raw) {
-    const s = String(raw ?? '');
-    const m = s.match(/^SOURCE:\s*(.*?)\r?\nCONTENT:\s*([\s\S]*)$/);
-    if (m) return { file: m[1].trim() || 'Unknown', text: m[2].trim() };
-    return { file: null, text: s.replace(/^CONTENT:\s*/, '').trim() };
+  function outcomeOf(data) {
+    if (data.blocked) return 'blocked';
+    if (data.abstained) return 'abstained';
+    if (data.conversational) return 'conversational';
+    return 'answered';
   }
 
-  function stepsHtml(steps) {
-    if (!steps?.length) return '';
-    const rows = steps
-      .map((s, i) => `<div class="step"><span class="step__idx">${i + 1}</span><span>${escapeHtml(s)}</span></div>`)
-      .join('');
-    return (
-      `<details class="disclosure"><summary class="disclosure__summary">` +
-        `<svg class="disclosure__chevron" viewBox="0 0 16 16" fill="none" stroke-width="1.7" aria-hidden="true">` +
-        `<path d="M6 3.5 10.5 8 6 12.5" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
-        `Reasoning<span class="disclosure__count">${steps.length}</span></summary>` +
-        `<div class="disclosure__content">${rows}</div></details>`
-    );
-  }
-
-  function sourcesHtml(sources) {
-    if (!sources?.length) return '';
-    // Citations are objects carrying document, section, relevance and a link
-    // back to the upstream page, so a reader can verify a claim rather than
-    // being shown an anonymous slab of retrieved text.
-    const items = sources
-      .map((src, i) => {
-        const title = src.title || src.source || 'Retrieved passage';
-        const section = src.section ? ` &middot; ${escapeHtml(src.section)}` : '';
-        const score = typeof src.score === 'number' ? src.score.toFixed(2) : '';
-        const link = src.url
-          ? ` <a class="source__link" href="${escapeHtml(src.url)}" target="_blank" rel="noopener noreferrer">source</a>`
-          : '';
-        return (
-          `<details class="source"><summary class="source__head">` +
-            `<span class="source__badge">${i + 1}</span>` +
-            `<span class="source__file">${escapeHtml(title)}${section}</span>` +
-            (score ? `<span class="source__score" title="cross-encoder relevance">${score}</span>` : '') +
-          `</summary><p class="source__text">${escapeHtml(src.excerpt || '')}</p>` +
-          `<p class="source__meta">${escapeHtml(src.topic || '')}${link}</p></details>`
-        );
-      })
-      .join('');
-    return (
-      `<details class="disclosure"><summary class="disclosure__summary">` +
-        `<svg class="disclosure__chevron" viewBox="0 0 16 16" fill="none" stroke-width="1.7" aria-hidden="true">` +
-        `<path d="M6 3.5 10.5 8 6 12.5" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
-        `Sources<span class="disclosure__count">${sources.length}</span></summary>` +
-        `<div class="disclosure__content">${items}</div></details>`
-    );
-  }
-
-  function fillAnswer(node, data) {
-    const steps = Array.isArray(data.thought_process) ? data.thought_process : [];
-    const sources = Array.isArray(data.sources) ? data.sources : [];
+  function fillAnswer(node, data, opts = {}) {
     const answer = data.answer ?? '';
-    const status = String(data.status ?? '');
+    const outcome = outcomeOf(data);
+    const head = `<div class="msg__role"><span class="msg__avatar">${ICON.shield}</span>Sentinel</div>`;
 
-    // Three outcomes, and the user needs to tell them apart: the gate refused
-    // the request, the corpus does not cover it, or it was answered.
-    const blocked = data.blocked === true || /guardrail/i.test(status);
-    const abstained = data.abstained === true;
-
-    const head = `<div class="msg__role"><span class="msg__avatar">${shieldSvg}</span>Sentinel</div>`;
-
-    if (blocked) {
-      // A refusal is the product working, not an error — so it reads as a
-      // deliberate notice rather than a failure state.
-      node.innerHTML =
-        head +
-        `<div class="notice notice--blocked">${warnSvg}` +
-          `<div><p class="notice__title">Outside scope</p>` +
-          `<p class="notice__text">${escapeHtml(answer)}</p></div></div>` +
-        stepsHtml(steps);
-    } else if (abstained) {
-      // Abstention is the headline behaviour: no documentation covered this, so
-      // nothing was invented. Shown as a distinct state rather than as prose,
-      // because "I don't know" being visibly deliberate is the whole point.
-      node.innerHTML =
-        head +
-        `<div class="notice notice--abstain">${warnSvg}` +
-          `<div><p class="notice__title">Not in the documentation</p>` +
-          `<div class="notice__text">${renderMarkdown(answer)}</div></div></div>` +
-        stepsHtml(steps);
+    if (outcome === 'blocked') {
+      node.innerHTML = head +
+        `<div class="notice notice--blocked">${ICON.warn}<div>` +
+        '<p class="notice__title">Outside scope</p>' +
+        `<div class="notice__text">${renderMarkdown(answer)}</div></div></div>`;
+    } else if (outcome === 'abstained') {
+      // Abstention is the product working, not an error. It reads as a
+      // deliberate state, distinct from both an answer and a failure.
+      node.innerHTML = head +
+        `<div class="notice notice--abstain">${ICON.warn}<div>` +
+        '<p class="notice__title">Not covered by the documentation</p>' +
+        `<div class="notice__text">${renderMarkdown(answer)}</div></div></div>`;
     } else {
-      node.innerHTML =
-        head +
+      node.innerHTML = head +
         `<div class="msg__body">${renderMarkdown(answer)}</div>` +
-        stepsHtml(steps) +
-        sourcesHtml(sources);
+        '<div class="msg__foot"></div>';
+      const foot = node.querySelector('.msg__foot');
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'icon-btn';
+      copy.title = 'Copy answer';
+      copy.setAttribute('aria-label', 'Copy answer');
+      copy.innerHTML = ICON.copy;
+      copy.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(answer);
+          copy.title = 'Copied';
+          setTimeout(() => { copy.title = 'Copy answer'; }, 1500);
+        } catch { copy.title = 'Press Ctrl+C'; }
+      });
+      foot.appendChild(copy);
     }
+
+    if (!opts.replay) updateInspector(data);
     scrollToEnd();
   }
 
   function fillError(node, title, detail) {
     node.innerHTML =
-      `<div class="msg__role"><span class="msg__avatar">${shieldSvg}</span>Sentinel</div>` +
-      `<div class="notice notice--error">${errSvg}` +
-        `<div><p class="notice__title">${escapeHtml(title)}</p>` +
-        `<p class="notice__text">${escapeHtml(detail)}</p></div></div>`;
+      `<div class="msg__role"><span class="msg__avatar">${ICON.shield}</span>Sentinel</div>` +
+      `<div class="notice notice--error">${ICON.err}<div>` +
+      `<p class="notice__title">${escapeHtml(title)}</p>` +
+      `<p class="notice__text">${escapeHtml(detail)}</p></div></div>`;
     scrollToEnd();
   }
 
+  /* ---------------------------------------------------------- inspector */
+
+  function scoreClass(score) {
+    if (score >= 0.7) return '';
+    if (score >= 0.35) return ' is-mid';
+    return ' is-low';
+  }
+
+  function updateInspector(data) {
+    const sources = Array.isArray(data.sources) ? data.sources : [];
+    const steps = Array.isArray(data.thought_process) ? data.thought_process : [];
+
+    el.tabCountSources.textContent = String(sources.length);
+
+    // Sources
+    el.sourcesList.innerHTML = '';
+    el.sourcesEmpty.hidden = sources.length > 0;
+    if (!sources.length) {
+      el.sourcesEmpty.textContent = data.abstained
+        ? 'No passage cleared the relevance threshold, so nothing was cited.'
+        : data.blocked
+          ? 'The request was refused at the gate, before retrieval.'
+          : 'This turn was answered from the conversation, without retrieval.';
+    }
+    sources.forEach((src, i) => {
+      const score = typeof src.score === 'number' ? src.score : 0;
+      const href = safeHref(src.url);
+      const d = document.createElement('details');
+      d.className = 'source';
+      d.innerHTML =
+        '<summary class="source__head">' +
+        `<span class="source__idx">${i + 1}</span>` +
+        '<span class="source__main">' +
+        `<span class="source__title">${escapeHtml(src.title || src.source || 'Passage')}</span>` +
+        `<span class="source__section">${escapeHtml(src.section || '')}</span>` +
+        '</span>' +
+        `<span class="source__score${scoreClass(score)}">${score.toFixed(2)}</span>` +
+        '</summary>' +
+        '<div class="source__body">' +
+        `<p class="source__excerpt">${escapeHtml(src.excerpt || '')}</p>` +
+        '<div class="source__meta">' +
+        `<span>${escapeHtml(src.topic || '')}</span>` +
+        (href ? `<a class="source__link" href="${href}" target="_blank" rel="noopener noreferrer">Open source ↗</a>` : '') +
+        '</div></div>';
+      el.sourcesList.appendChild(d);
+    });
+
+    // Context — the exact passages handed to the model
+    el.contextList.innerHTML = '';
+    el.contextEmpty.hidden = sources.length > 0;
+    if (sources.length) {
+      sources.forEach((src, i) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'source';
+        wrap.innerHTML =
+          '<div class="source__head">' +
+          `<span class="source__idx">${i + 1}</span>` +
+          `<span class="source__main"><span class="source__title">${escapeHtml(src.section || src.title || '')}</span></span>` +
+          '</div>' +
+          `<div class="source__body"><p class="source__excerpt">${escapeHtml(src.excerpt || '')}</p></div>`;
+        el.contextList.appendChild(wrap);
+      });
+    }
+
+    // Trace — the pipeline's own decisions
+    el.traceList.innerHTML = '';
+    el.traceEmpty.hidden = steps.length > 0;
+    steps.forEach((step, i) => {
+      const row = document.createElement('div');
+      row.className = 'trace__step';
+      row.innerHTML = `<span class="trace__idx">${i + 1}</span><span>${escapeHtml(step)}</span>`;
+      el.traceList.appendChild(row);
+    });
+
+    // Query info
+    const outcome = outcomeOf(data);
+    const label = {
+      answered: ['Grounded answer', 'is-ok'],
+      abstained: ['Declined — not covered', 'is-warn'],
+      blocked: ['Blocked at the gate', 'is-danger'],
+      conversational: ['Conversational', ''],
+    }[outcome];
+    el.qiOutcome.textContent = label[0];
+    el.qiOutcome.className = label[1];
+    const top = typeof data.top_score === 'number' ? data.top_score : null;
+    el.qiRelevance.textContent = top === null ? '—' : top.toFixed(3);
+    el.qiPassages.textContent = String(sources.length);
+    el.qiModel.textContent = data.answered_by || '—';
+    el.qiTime.textContent = data.elapsed ? `${data.elapsed.toFixed(2)}s` : '—';
+    el.queryInfo.hidden = false;
+  }
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t) => {
+      const on = t.dataset.tab === name;
+      t.classList.toggle('is-active', on);
+      t.setAttribute('aria-selected', String(on));
+    });
+    document.querySelectorAll('.panel').forEach((p) =>
+      p.classList.toggle('is-active', p.id === `panel-${name}`));
+  }
+
+  /* ---------------------------------------------------------------- net */
+
+  async function startSession() {
+    // The server owns conversation identity. If it declines we run without
+    // memory rather than inventing an id the server would reject.
+    try {
+      const res = await fetch('/session', { method: 'POST' });
+      sessionId = res.ok ? ((await res.json()).session_id ?? null) : null;
+    } catch { sessionId = null; }
+  }
+
   async function loadScope() {
-    // The sidebar lists what is actually indexed. A hardcoded list is how the
-    // previous version ended up advertising topics the corpus did not contain.
-    const list = $('topics');
-    if (!list) return;
     try {
       const res = await fetch('/scope', { cache: 'no-store' });
       if (!res.ok) return;
       const scope = await res.json();
       const topics = Array.isArray(scope.topics) ? scope.topics : [];
+      window.__scope = scope;
+      applyScopeFacts();
       if (!topics.length) return;
-      list.innerHTML = topics
-        .map(
-          (t) =>
-            `<li><span class="topics__dot"></span>${escapeHtml(t.label)}` +
-            `<span class="topics__count">${t.passages}</span></li>`
-        )
-        .join('');
-      const sub = $('scopeSummary');
-      if (sub) {
-        sub.textContent = `${scope.points} passages across ${topics.length} areas`;
-      }
-    } catch { /* leave the static fallback in place */ }
+
+      el.scopeSummary.textContent =
+        `${scope.points} passages · ${topics.length} areas`;
+      el.topics.innerHTML = topics.map((t) =>
+        '<li><span class="topics__dot"></span>' +
+        `<span class="topics__label" title="${escapeHtml(t.label)}">${escapeHtml(t.label.split(' - ')[0])}</span>` +
+        `<span class="topics__count">${t.passages}</span></li>`).join('');
+    } catch { /* the static fallback copy stands */ }
   }
 
-  /* ------------------------------------------------------------- net ---- */
+  function applyScopeFacts() {
+    const scope = window.__scope;
+    if (!scope) return;
+    const p = $('factPassages'), t = $('factTopics');
+    if (p) p.textContent = String(scope.points ?? '—');
+    if (t) t.textContent = String((scope.topics || []).length || '—');
+  }
+
+  function setStatus(kind, text, title) {
+    el.statusDot.className = `dot ${kind}`;
+    el.statusText.textContent = text;
+    el.statusBar.title = title || text;
+  }
+
+  async function checkHealth() {
+    try {
+      const res = await fetch('/health', { cache: 'no-store' });
+      if (!res.ok) { setStatus('is-down', 'Backend error'); return; }
+      const h = await res.json();
+      const bits = [];
+      if (!h.guardrails) bits.push('guardrails down');
+      if (!h.corpus?.available) bits.push('corpus unreachable');
+      if (h.status === 'ok') {
+        setStatus('is-ok', 'Connected',
+          `Corpus ${h.corpus?.points ?? '?'} passages · generation ${h.models?.generation ?? '?'}`);
+      } else {
+        setStatus('is-degraded', 'Degraded', bits.join(', ') || 'Some subsystems are unavailable');
+      }
+    } catch {
+      setStatus('is-down', 'Offline', 'The backend is not reachable from this page');
+    }
+  }
 
   async function ask(text) {
     const node = addPending();
     const controller = new AbortController();
     inFlight = controller;
     const timer = setTimeout(() => controller.abort('timeout'), REQUEST_TIMEOUT_MS);
+    const started = performance.now();
 
     try {
       const res = await fetch('/query', {
@@ -348,42 +546,38 @@
         signal: controller.signal,
       });
 
-      // Check the status before parsing — a 500 with an HTML error page would
+      // Check status before parsing — a 500 with an HTML error page would
       // otherwise surface as a confusing JSON parse failure.
       if (!res.ok) {
         let detail = `The backend responded with HTTP ${res.status}.`;
+        if (res.status === 429) detail = 'Rate limit reached. Wait a moment and try again.';
+        if (res.status === 404) { sessionId = null; detail = 'That conversation expired. Your next message will start a new one.'; }
         try {
-          const body = await res.text();
-          if (body) detail += ` ${body.slice(0, 240)}`;
-        } catch { /* body unreadable — the status alone is enough */ }
+          const body = await res.json();
+          if (body?.detail) detail = String(body.detail);
+          if (body?.correlation_id) detail += ` (ref ${body.correlation_id})`;
+        } catch { /* status alone is enough */ }
         fillError(node, 'Request failed', detail);
         return;
       }
 
       let data;
-      try {
-        data = await res.json();
-      } catch {
+      try { data = await res.json(); }
+      catch {
         fillError(node, 'Unreadable response', 'The backend returned a response that was not valid JSON.');
         return;
       }
 
+      data.elapsed = (performance.now() - started) / 1000;
       fillAnswer(node, data);
       turns += 1;
-      el.turnCount.textContent = String(turns);
-      setStatus('online', 'Connected');
+      setTurnPill();
+      recordTurn(text, data);
     } catch (err) {
-      if (controller.signal.aborted && controller.signal.reason === 'cancelled') {
-        node.remove();
-        return;
-      }
-      if (controller.signal.aborted) {
-        fillError(node, 'Timed out',
-          `No response within ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s. The backend may still be starting up — it imports the guardrails and agent graph before accepting traffic.`);
+      if (err?.name === 'AbortError') {
+        fillError(node, 'Timed out', 'The request took too long. The pipeline runs several model calls per question.');
       } else {
-        fillError(node, 'Cannot reach the backend',
-          'The request failed. Check that the API is running and reachable, then try again.');
-        setStatus('offline', 'Unreachable');
+        fillError(node, 'Network error', 'Could not reach the backend. Check that it is running.');
       }
     } finally {
       clearTimeout(timer);
@@ -392,42 +586,29 @@
     }
   }
 
-  function setStatus(state, label) {
-    el.status.dataset.state = state;
-    el.statusLabel.textContent = label;
-  }
+  /* ------------------------------------------------------------- shell */
 
-  async function checkHealth() {
-    try {
-      const res = await fetch('/health', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setStatus('online', data.guardrails === false ? 'Degraded' : 'Connected');
-      } else {
-        setStatus('offline', `HTTP ${res.status}`);
-      }
-    } catch {
-      setStatus('offline', 'Unreachable');
-    }
+  function setTurnPill() {
+    el.turnPill.textContent = `${turns} turn${turns === 1 ? '' : 's'}`;
   }
-
-  /* ------------------------------------------------------------- ui ----- */
 
   function setBusy(busy) {
     el.send.disabled = busy || !el.input.value.trim();
     el.input.disabled = busy;
-    el.topbarHint.textContent = busy ? 'Thinking…' : 'Grounded in your documentation';
+    el.topbarHint.textContent = busy ? 'Thinking…' : 'Grounded in the official documentation';
     if (!busy) el.input.focus();
   }
 
   function autoGrow() {
     el.input.style.height = 'auto';
-    el.input.style.height = `${Math.min(el.input.scrollHeight, 190)}px`;
+    el.input.style.height = `${Math.min(el.input.scrollHeight, 200)}px`;
+    el.charCount.textContent = `${el.input.value.length} / 4000`;
   }
 
-  function submit(text) {
-    const value = String(text ?? el.input.value).trim();
+  function submit() {
+    const value = el.input.value.trim();
     if (!value || inFlight) return;
+    if (!sessionId) startSession();
     addUser(value);
     el.input.value = '';
     autoGrow();
@@ -435,120 +616,118 @@
     ask(value);
   }
 
-  async function startSession() {
-    // The server owns conversation identity. If it declines, we simply run
-    // without memory rather than inventing an id the server would reject.
-    try {
-      const res = await fetch('/session', { method: 'POST' });
-      if (res.ok) {
-        sessionId = (await res.json()).session_id ?? null;
-      } else {
-        sessionId = null;
-      }
-    } catch {
-      sessionId = null;
-    }
-    el.threadLabel.textContent = sessionId ? sessionId.slice(0, 8) : 'no memory';
-  }
-
   function newConversation() {
     if (inFlight) { inFlight.abort('cancelled'); inFlight = null; }
-    startSession();
+    activeChatId = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
     turns = 0;
-    el.turnCount.textContent = '0';
+    setTurnPill();
     if (listEl) { listEl.remove(); listEl = null; }
-    // Rebuild the empty state so a fresh session looks like a fresh session.
-    location.hash = '';
     el.thread.innerHTML = '';
-    el.thread.appendChild(buildWelcome());
-    el.welcome = $('welcome');
-    wireSuggestions();
+    showWelcome();
+    el.queryInfo.hidden = true;
+    el.sourcesList.innerHTML = '';
+    el.contextList.innerHTML = '';
+    el.traceList.innerHTML = '';
+    el.sourcesEmpty.hidden = false;
+    el.sourcesEmpty.textContent = 'Ask a question to see the passages the answer was built from.';
+    el.contextEmpty.hidden = false;
+    el.traceEmpty.hidden = false;
+    el.tabCountSources.textContent = '0';
+    startSession();
+    renderHistory();
     setBusy(false);
   }
 
-  function buildWelcome() {
-    const tpl = document.createElement('div');
-    tpl.innerHTML = WELCOME_HTML;
-    return tpl.firstElementChild;
+  // Panes auto-follow the breakpoint until the user expresses a preference;
+  // after that their choice wins. Without this the visibility set at load never
+  // updated, so widening the window left both side panes hidden.
+  let railChoice = null;       // null = follow breakpoint, true = shown
+  let inspectorChoice = null;
+
+  function setRail(show) {
+    el.app.classList.toggle('rail-hidden', !show);
+    el.scrim.hidden = !(show && window.innerWidth <= 860);
   }
 
-  // Captured once at load so "New conversation" can restore it verbatim.
-  const WELCOME_HTML = el.welcome ? el.welcome.outerHTML : '';
-
-  function wireSuggestions() {
-    document.querySelectorAll('.suggestion').forEach((b) => {
-      b.addEventListener('click', () => submit(b.dataset.q));
-    });
+  function setInspector(show) {
+    el.app.classList.toggle('inspector-hidden', !show);
+    el.inspectorToggle.setAttribute('aria-pressed', String(show));
   }
 
-  function applyTheme(theme) {
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('sentinel-theme', theme); } catch { /* private mode */ }
+  function openRail() { railChoice = true; setRail(true); }
+  function closeRail() { railChoice = false; setRail(false); }
+
+  function toggleInspector() {
+    const show = el.app.classList.contains('inspector-hidden');
+    inspectorChoice = show;
+    setInspector(show);
   }
 
-  function setSidebar(open) {
-    el.app.dataset.sidebar = open ? 'open' : 'closed';
-    el.scrim.hidden = !open;
+  function applyBreakpoint() {
+    const w = window.innerWidth;
+    setRail(railChoice === null ? w > 860 : railChoice);
+    setInspector(inspectorChoice === null ? w > 1180 : inspectorChoice);
   }
 
-  /* ----------------------------------------------------------- init ---- */
+  /* --------------------------------------------------------------- init */
 
-  // Theme: stored choice wins, otherwise follow the OS.
-  try {
-    const saved = localStorage.getItem('sentinel-theme');
-    if (saved === 'light' || saved === 'dark') applyTheme(saved);
-    else if (window.matchMedia?.('(prefers-color-scheme: light)').matches) applyTheme('light');
-  } catch { /* storage unavailable — dark default stands */ }
-
-  startSession();
+  initTheme();
+  loadHistory();
   loadScope();
+  checkHealth();
+  setInterval(checkHealth, HEALTH_INTERVAL_MS);
+  newConversation();
 
-  el.form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+  applyBreakpoint();
 
-  el.input.addEventListener('input', () => {
-    autoGrow();
-    el.send.disabled = !el.input.value.trim() || !!inFlight;
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(applyBreakpoint, 120);
   });
 
+  el.composer.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+  el.input.addEventListener('input', () => { autoGrow(); el.send.disabled = !el.input.value.trim() || !!inFlight; });
   el.input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      submit();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
   });
 
   el.newChat.addEventListener('click', newConversation);
+  el.historySearch.addEventListener('input', renderHistory);
+  el.statusBar.addEventListener('click', checkHealth);
+  el.inspectorToggle.addEventListener('click', toggleInspector);
+  el.railOpen.addEventListener('click', openRail);
+  el.railClose.addEventListener('click', closeRail);
+  el.scrim.addEventListener('click', closeRail);
 
-  el.themeToggle.addEventListener('click', () => {
-    applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+  el.suggestions.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip || inFlight) return;
+    el.input.value = chip.dataset.q || chip.textContent.trim();
+    autoGrow();
+    submit();
   });
 
-  el.menuToggle.addEventListener('click', () =>
-    setSidebar(el.app.dataset.sidebar !== 'open'));
-  el.scrim.addEventListener('click', () => setSidebar(false));
+  document.querySelectorAll('.tab').forEach((t) =>
+    t.addEventListener('click', () => switchTab(t.dataset.tab)));
 
-  // Copy buttons are delegated: code blocks are created after this runs.
-  el.thread.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-copy]');
+  // Copy buttons are created inside rendered markdown, so delegate.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.codeblock__copy');
     if (!btn) return;
     const code = btn.closest('.codeblock')?.querySelector('code')?.textContent ?? '';
     try {
       await navigator.clipboard.writeText(code);
       btn.textContent = 'Copied';
-      btn.dataset.copied = 'true';
-    } catch {
-      btn.textContent = 'Press ⌘C';
-    }
-    setTimeout(() => { btn.textContent = 'Copy'; delete btn.dataset.copied; }, 1600);
+    } catch { btn.textContent = 'Press Ctrl+C'; }
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
   });
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && el.app.dataset.sidebar === 'open') setSidebar(false);
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      openRail();
+      el.historySearch.focus();
+    }
   });
-
-  wireSuggestions();
-  setBusy(false);
-  checkHealth();
-  setInterval(checkHealth, HEALTH_INTERVAL_MS);
-  el.input.focus();
 })();

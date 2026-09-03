@@ -40,7 +40,10 @@ async def detect_injection_action(context: dict | None = None) -> bool:
 @action(name="detect_off_topic_action", is_system_action=True)
 async def detect_off_topic_action(context: dict | None = None) -> bool:
     message = (context or {}).get("user_message", "")
-    return is_off_topic(message)
+    # History matters here as much as for injection: a bare follow-up such as
+    # "explain in elaborate" has no subject of its own and was being blocked as
+    # off-topic in the middle of a Kubernetes conversation.
+    return is_off_topic(message, history=_pending_history)
 
 
 def initialize_rails() -> None:

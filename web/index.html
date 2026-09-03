@@ -1,153 +1,190 @@
 <!doctype html>
 <html lang="en" data-theme="dark">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="color-scheme" content="dark light" />
-<title>Sentinel-RAG</title>
-<meta name="description" content="Enterprise documentation assistant with layered guardrails." />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3 5 8v8c0 6.6 4.5 12.7 11 14 6.5-1.3 11-7.4 11-14V8z' fill='%237c6bf5'/%3E%3C/svg%3E" />
-<link rel="stylesheet" href="/styles.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark light" />
+  <title>Sentinel RAG — Kubernetes documentation assistant</title>
+  <meta name="description" content="Grounded answers from the official Kubernetes documentation, with a citation for every claim — and an explicit refusal when the docs do not cover the question." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3l11 5.5v9C27 24 22 28.5 16 30 10 28.5 5 24 5 17.5v-9z' fill='%230d9488'/%3E%3Cpath d='M11 16.4l3.4 3.4L21 13' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+<div class="app" id="app">
 
-<div class="app">
-
-  <!-- ─────────────────────────────  SIDEBAR  ───────────────────────────── -->
-  <aside class="sidebar" id="sidebar" aria-label="Session">
-    <div class="sidebar__head">
+  <!-- ───────────────────────────── left rail ───────────────────────────── -->
+  <aside class="rail" id="rail" aria-label="Navigation">
+    <div class="rail__head">
       <div class="brand">
-        <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true">
-          <path d="M16 3 5 8v8c0 6.6 4.5 12.7 11 14 6.5-1.3 11-7.4 11-14V8z" />
-          <path class="brand__check" d="M11 16.5l3.2 3.2L21 13" fill="none" stroke-width="2.2"
-                stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <div class="brand__text">
-          <span class="brand__name">Sentinel<span class="brand__accent">-RAG</span></span>
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M16 3l11 5.5v9C27 24 22 28.5 16 30 10 28.5 5 24 5 17.5v-9z" fill="currentColor" opacity=".16"/>
+            <path d="M16 3l11 5.5v9C27 24 22 28.5 16 30 10 28.5 5 24 5 17.5v-9z" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M11 16.4l3.4 3.4L21 13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="brand__text">
+          <span class="brand__name">Sentinel<span class="brand__accent">&nbsp;RAG</span></span>
           <span class="brand__sub">Kubernetes documentation</span>
-        </div>
+        </span>
       </div>
-    </div>
-
-    <div class="sidebar__body">
-      <section class="panel">
-        <h2 class="panel__title">Status</h2>
-        <div class="status" id="status" data-state="checking">
-          <span class="status__dot" aria-hidden="true"></span>
-          <span class="status__label" id="statusLabel">Connecting…</span>
-        </div>
-        <dl class="meta">
-          <div class="meta__row">
-            <dt>Session</dt>
-            <dd id="threadLabel" class="mono">—</dd>
-          </div>
-          <div class="meta__row">
-            <dt>Messages</dt>
-            <dd id="turnCount">0</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section class="panel">
-        <h2 class="panel__title">Knowledge base</h2>
-        <p class="panel__sub" id="scopeSummary">Loading indexed topics…</p>
-        <!-- Populated from GET /scope, which reads the live corpus. A static
-             list here is how the previous build advertised coverage the
-             knowledge base did not actually have. -->
-        <ul class="topics" id="topics">
-          <li><span class="topics__dot"></span>Kubernetes documentation</li>
-        </ul>
-      </section>
-    </div>
-
-    <div class="sidebar__foot">
-      <button class="btn btn--ghost btn--block" id="newChat" type="button">
-        <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
-          <path d="M8 3.5v9M3.5 8h9" fill="none" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
-        New conversation
+      <button class="icon-btn rail__collapse" id="railClose" type="button" aria-label="Hide navigation">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 3.5 5.5 8 10 12.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
+    </div>
+
+    <button class="btn btn--primary rail__new" id="newChat" type="button">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" stroke-linecap="round"/></svg>
+      New conversation
+    </button>
+
+    <div class="field rail__search">
+      <svg class="field__icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7.2" cy="7.2" r="4.2"/><path d="m10.4 10.4 2.6 2.6" stroke-linecap="round"/></svg>
+      <input id="historySearch" type="search" placeholder="Search conversations" aria-label="Search conversations" autocomplete="off" />
+    </div>
+
+    <nav class="rail__body" aria-label="Conversation history">
+      <div class="rail__section">
+        <h2 class="rail__title">
+          History
+          <span class="rail__hint" title="Conversations are kept in this browser only. The server stores no chat history.">local</span>
+        </h2>
+        <ul class="history" id="historyList"></ul>
+        <p class="rail__empty" id="historyEmpty">No conversations yet.</p>
+      </div>
+
+      <div class="rail__section">
+        <h2 class="rail__title">Knowledge base</h2>
+        <p class="rail__meta" id="scopeSummary">Loading indexed topics…</p>
+        <ul class="topics" id="topics"></ul>
+      </div>
+    </nav>
+
+    <div class="rail__foot">
+      <button class="statusbar" id="statusBar" type="button" aria-live="polite" title="Backend status — click to refresh">
+        <span class="dot" id="statusDot" aria-hidden="true"></span>
+        <span class="statusbar__text" id="statusText">Checking…</span>
+      </button>
+      <div class="theme-switch" role="group" aria-label="Colour theme">
+        <button class="theme-switch__btn" data-theme-set="light" type="button" aria-label="Light theme" title="Light">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="3.1"/><path d="M8 1.4v1.6M8 13v1.6M14.6 8H13M3 8H1.4M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1M12.7 12.7l-1.1-1.1M4.4 4.4 3.3 3.3" stroke-linecap="round"/></svg>
+        </button>
+        <button class="theme-switch__btn" data-theme-set="dark" type="button" aria-label="Dark theme" title="Dark">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
     </div>
   </aside>
 
-  <!-- ──────────────────────────────  MAIN  ─────────────────────────────── -->
+  <!-- ───────────────────────────── conversation ───────────────────────── -->
   <main class="main">
     <header class="topbar">
-      <button class="btn btn--icon topbar__menu" id="menuToggle" type="button" aria-label="Toggle sidebar">
-        <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
-          <path d="M2.5 4h11M2.5 8h11M2.5 12h11" fill="none" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
+      <button class="icon-btn topbar__menu" id="railOpen" type="button" aria-label="Show navigation">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" stroke-linecap="round"/></svg>
       </button>
       <div class="topbar__title">
-        <span class="topbar__name">Assistant</span>
-        <span class="topbar__hint" id="topbarHint">Grounded in your documentation</span>
+        <h1>Kubernetes assistant</h1>
+        <p id="topbarHint">Grounded in the official documentation</p>
       </div>
-      <button class="btn btn--icon" id="themeToggle" type="button" aria-label="Toggle theme">
-        <svg viewBox="0 0 16 16" class="icon icon--sun" aria-hidden="true">
-          <circle cx="8" cy="8" r="3.2" fill="none" stroke-width="1.5" />
-          <path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.9 3.1l-1.1 1.1M4.2 11.8l-1.1 1.1M12.9 12.9l-1.1-1.1M4.2 4.2 3.1 3.1"
-                fill="none" stroke-width="1.5" stroke-linecap="round" />
-        </svg>
-        <svg viewBox="0 0 16 16" class="icon icon--moon" aria-hidden="true">
-          <path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z" fill="none" stroke-width="1.5"
-                stroke-linejoin="round" />
-        </svg>
-      </button>
+      <div class="topbar__actions">
+        <span class="pill pill--quiet" id="turnPill" title="Turns in this conversation">0 turns</span>
+        <button class="icon-btn" id="inspectorToggle" type="button" aria-label="Toggle inspector panel" aria-pressed="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.8" y="3" width="12.4" height="10" rx="1.6"/><path d="M10 3v10"/></svg>
+        </button>
+      </div>
     </header>
 
-    <div class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions">
-      <!-- Empty state -->
-      <div class="welcome" id="welcome">
-        <div class="welcome__glyph" aria-hidden="true">
-          <svg viewBox="0 0 32 32">
-            <path d="M16 3 5 8v8c0 6.6 4.5 12.7 11 14 6.5-1.3 11-7.4 11-14V8z" />
-          </svg>
-        </div>
-        <h1 class="welcome__title">Ask about Kubernetes</h1>
-        <p class="welcome__body">
-          Grounded in the official Kubernetes documentation, with a citation for every claim.
-          When the docs do not cover something, it says so instead of guessing.
-        </p>
-        <div class="suggestions" id="suggestions">
-          <button class="suggestion" type="button" data-q="How do I monitor the status of a Kubernetes Job?">
-            <span class="suggestion__label">Monitor a Job</span>
-            <span class="suggestion__text">How do I monitor the status of a Kubernetes Job?</span>
-          </button>
-          <button class="suggestion" type="button" data-q="How does Horizontal Pod Autoscaling work?">
-            <span class="suggestion__label">Autoscaling</span>
-            <span class="suggestion__text">How does Horizontal Pod Autoscaling work?</span>
-          </button>
-          <button class="suggestion" type="button" data-q="What restart policies can a Kubernetes Job use?">
-            <span class="suggestion__label">Jobs</span>
-            <span class="suggestion__text">What restart policies can a Kubernetes Job use?</span>
-          </button>
-          <button class="suggestion" type="button" data-q="What is the difference between a StatefulSet and a Deployment?">
-            <span class="suggestion__label">Workloads</span>
-            <span class="suggestion__text">What is the difference between a StatefulSet and a Deployment?</span>
-          </button>
-        </div>
-      </div>
-    </div>
+    <div class="thread" id="thread" role="log" aria-live="polite" aria-relevant="additions"></div>
 
     <div class="composer-wrap">
+      <div class="suggestions" id="suggestions">
+        <button class="chip" type="button" data-q="What restart policies can a Kubernetes Job use?">Job restart policies</button>
+        <button class="chip" type="button" data-q="What is the difference between a StatefulSet and a Deployment?">StatefulSet vs Deployment</button>
+        <button class="chip" type="button" data-q="How does a HorizontalPodAutoscaler decide how many replicas to run?">How HPA scales</button>
+        <button class="chip" type="button" data-q="How do I mount a ConfigMap as a volume?">Mount a ConfigMap</button>
+      </div>
       <form class="composer" id="composer" autocomplete="off">
-        <textarea id="input" class="composer__input" rows="1" placeholder="Ask about Kubernetes workloads, config, networking, storage…"
-                  aria-label="Message" maxlength="4000"></textarea>
-        <button class="btn btn--send" id="send" type="submit" aria-label="Send message" disabled>
-          <svg viewBox="0 0 16 16" class="icon" aria-hidden="true">
-            <path d="M8 13V3.5M4 7l4-4 4 4" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
+        <textarea id="input" class="composer__input" rows="1" maxlength="4000"
+                  placeholder="Ask about workloads, config, networking, storage, security or operations…"
+                  aria-label="Your question"></textarea>
+        <div class="composer__foot">
+          <span class="composer__note" id="composerNote">Answers cite their source. Unsupported questions are declined.</span>
+          <div class="composer__right">
+            <span class="composer__count" id="charCount">0 / 4000</span>
+            <button class="btn btn--primary btn--send" id="send" type="submit" disabled aria-label="Send">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.6 8h9.6M8.6 4.2 12.4 8l-3.8 3.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </div>
       </form>
-      <p class="composer__note">
-        <kbd>Enter</kbd> to send · <kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line
-      </p>
     </div>
   </main>
+
+  <!-- ───────────────────────────── inspector ──────────────────────────── -->
+  <aside class="inspector" id="inspector" aria-label="Answer inspector">
+    <div class="inspector__tabs" role="tablist">
+      <button class="tab is-active" role="tab" aria-selected="true" data-tab="sources" type="button">
+        Sources <span class="tab__count" id="tabCountSources">0</span>
+      </button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="context" type="button">Context</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="trace" type="button">Trace</button>
+    </div>
+
+    <div class="inspector__body">
+      <section class="panel is-active" id="panel-sources" role="tabpanel">
+        <p class="panel__empty" id="sourcesEmpty">Ask a question to see the passages the answer was built from.</p>
+        <div id="sourcesList"></div>
+      </section>
+
+      <section class="panel" id="panel-context" role="tabpanel">
+        <p class="panel__empty" id="contextEmpty">The exact text sent to the model will appear here.</p>
+        <div id="contextList"></div>
+      </section>
+
+      <section class="panel" id="panel-trace" role="tabpanel">
+        <p class="panel__empty" id="traceEmpty">The pipeline's decisions for the last answer will appear here.</p>
+        <div id="traceList"></div>
+      </section>
+    </div>
+
+    <div class="queryinfo" id="queryInfo" hidden>
+      <h2 class="queryinfo__title">Query info</h2>
+      <dl class="queryinfo__grid">
+        <dt>Outcome</dt><dd id="qiOutcome">—</dd>
+        <dt>Top relevance</dt><dd id="qiRelevance" class="mono">—</dd>
+        <dt>Passages used</dt><dd id="qiPassages" class="mono">—</dd>
+        <dt>Model</dt><dd id="qiModel" class="mono">—</dd>
+        <dt>Response time</dt><dd id="qiTime" class="mono">—</dd>
+      </dl>
+    </div>
+  </aside>
 
   <div class="scrim" id="scrim" hidden></div>
 </div>
 
-<script src="/app.js" defer></script>
+<template id="welcomeTemplate">
+  <div class="welcome" id="welcome">
+    <span class="welcome__mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" fill="none">
+        <path d="M16 3l11 5.5v9C27 24 22 28.5 16 30 10 28.5 5 24 5 17.5v-9z" fill="currentColor" opacity=".14"/>
+        <path d="M16 3l11 5.5v9C27 24 22 28.5 16 30 10 28.5 5 24 5 17.5v-9z" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M11 16.4l3.4 3.4L21 13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <h2 class="welcome__title">Ask about Kubernetes</h2>
+    <p class="welcome__body">
+      Every answer is built from the official Kubernetes documentation and cites the
+      section it came from. When the documentation does not cover something, this
+      assistant says so instead of guessing.
+    </p>
+    <ul class="welcome__facts">
+      <li><strong id="factPassages">—</strong><span>indexed passages</span></li>
+      <li><strong id="factTopics">—</strong><span>subject areas</span></li>
+      <li><strong>0.35</strong><span>relevance threshold</span></li>
+    </ul>
+  </div>
+</template>
+
+<script src="app.js"></script>
 </body>
 </html>

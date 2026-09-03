@@ -137,7 +137,7 @@ def run_retrieval(dataset: dict, out_dir: Path) -> dict:
 
 def run_behaviour(dataset: dict, out_dir: Path, pace: float) -> dict:
     from evals.harness import behaviour_eval
-    from evals.harness.pipeline import run_items
+    from evals.harness.pipeline import DailyQuotaExhausted, run_items
 
     print("\n=== Tier 2: end-to-end behaviour (full pipeline, LLM) ===")
     started = time.time()
@@ -155,7 +155,18 @@ def run_behaviour(dataset: dict, out_dir: Path, pace: float) -> dict:
         )
         print(f"  {done}/{total} [{state}] {record['question'][:52]:52}", end="\r", flush=True)
 
-    records = run_items(items, pace_seconds=pace, progress=progress)
+    aborted = ""
+    try:
+        records = run_items(items, pace_seconds=pace, progress=progress)
+    except DailyQuotaExhausted as e:
+        # Keep what was gathered, but never score it. A partial run graded as
+        # though it were complete reports exhausted quota as a quality
+        # regression, which is worse than reporting nothing.
+        aborted = str(e)
+        records = getattr(e, "records", [])
+        print(f"
+
+  ABORTED: {aborted}")
 
     # Grade the hard negatives: retrieval scores them as relevant, so only the
     # generator can decline. Needs a judge call per item.
@@ -179,9 +190,19 @@ def run_behaviour(dataset: dict, out_dir: Path, pace: float) -> dict:
             record["decline_judged"] = judged
             time.sleep(pace)
 
-    (out_dir / "behaviour_records.json").write_text(
-        json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    if records:
+        (out_dir / "behaviour_records.json").write_text(
+            json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+
+    if aborted:
+        return {
+            "incomplete": aborted,
+            "items_completed": len(records),
+            "items_total": len(items),
+            "duration_seconds": round(time.time() - started, 1),
+        }
+
     summary = behaviour_eval.run(items, records)
     summary["duration_seconds"] = round(time.time() - started, 1)
     print(f"\n  done in {summary['duration_seconds']}s")
@@ -291,7 +312,21 @@ def main() -> int:
     out_dir = Path(args.out) if args.out else RUNS_DIR / stamp
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    results: dict = {"meta": build_metadata(dataset)}
+    # Merge into an existing summary rather than replacing it. Tiers are run
+    # separately - the deterministic one is cheap, the judged ones are paced
+    # around a daily token cap - so `--out <existing dir>` is the normal way to
+    # add a tier to a run. Rebuilding the dict from scratch silently destroyed
+    # the retrieval block when the behaviour tier was added to the same run.
+    summary_path = out_dir / "summary.json"
+    results: dict = {}
+    if summary_path.exists():
+        try:
+            results = json.loads(summary_path.read_text(encoding="utf-8"))
+            print(f"Merging into existing run: {sorted(k for k in results if k != 'meta')}")
+        except json.JSONDecodeError:
+            print(f"warning: {summary_path} is unreadable; starting a fresh summary")
+            results = {}
+    results["meta"] = build_metadata(dataset)
     tiers = ["retrieval", "behaviour", "ragas"] if args.tier == "all" else [args.tier]
 
     for tier in tiers:
@@ -301,13 +336,19 @@ def main() -> int:
             results["behaviour"] = run_behaviour(dataset, out_dir, args.pace)
         elif tier == "ragas":
             metrics = tuple(m.strip() for m in args.ragas_metrics.split(",") if m.strip())
-            results["ragas"] = run_ragas(
-                dataset, out_dir, args.pace, args.ragas_sample, metrics or None
+            # Same best-of merge the artifacts use. Replacing the block
+            # wholesale destroyed a completed faithfulness measurement when a
+            # later, quota-starved run scored a different metric into the same
+            # directory - the tier-level merge above only protects tiers from
+            # each other, not metrics within a tier.
+            from evals.harness.ragas_eval import merge_summaries
+
+            results["ragas"] = merge_summaries(
+                results.get("ragas", {}),
+                run_ragas(dataset, out_dir, args.pace, args.ragas_sample, metrics or None),
             )
         # Persist after every tier: a long run must not lose finished work.
-        (out_dir / "summary.json").write_text(
-            json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        summary_path.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print_summary(results)
     print(f"\nArtifact: {out_dir / 'summary.json'}")

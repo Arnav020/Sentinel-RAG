@@ -18,6 +18,18 @@ Metrics:
     unanswerable and off-domain questions, and correctly does NOT decline
     answerable ones. The system's most serious defect was invisible to the old
     suite because every question in it was answerable.
+
+Scope, stated plainly: this tier searches and reranks the dataset question
+alone. Production does more - the planner also emits a keyword phrasing, and
+both phrasings are searched and reranked with the best score kept per passage
+(see `ranking_service.score_chunks_multi`), which is worth real points on
+questions whose answer is written in identifiers rather than prose. Reproducing
+that here would put an LLM call on the path and forfeit exactly the properties
+this tier exists for: zero cost, zero variance, runnable on every pull request.
+
+So read these numbers as a **floor on the retriever**, not as production
+performance. The behaviour tier runs the full graph, planner included, and is
+the number to quote for end-to-end quality.
 """
 
 from __future__ import annotations

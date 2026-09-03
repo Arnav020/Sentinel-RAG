@@ -20,6 +20,9 @@ Three things this fixes:
 
 from __future__ import annotations
 
+import threading
+import time
+from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -164,17 +167,20 @@ def complete(
                 "For a reasoning model this usually means max_tokens was too small."
             )
 
-        return LLMResponse(
+        result = LLMResponse(
             content=content,
             model=str(answered_by),
             cache_hit=cache_hit,
             prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
             completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
         )
+        record_usage(model, result.total_tokens)
+        return result
 
     except LLMError:
         raise
     except Exception as e:
+        note_if_daily_quota(model, str(e))
         logfire.error(f"LLM call failed ({model}, feature={feature}): {e}")
         raise LLMError(f"{type(e).__name__}: {e}") from e
 
@@ -214,3 +220,79 @@ def reset_clients() -> None:
     """Drop cached clients so tests can change configuration."""
     global _groq_client, _portkey_client
     _groq_client, _portkey_client = None, None
+
+
+# --------------------------------------------------------------------------
+# Token accounting
+#
+# Every provider limit that actually bites is a *token* limit, not a request
+# limit, and neither the response body nor the rate-limit headers report how
+# much of the per-minute budget is left after the call. Batch callers were left
+# pacing on a flat sleep, which stays under the limit only by accident: a
+# behaviour run at 1.5s per item drew 236 rate-limit errors and lost 73 of 145
+# items to failed generation, because a reasoning model's hidden reasoning
+# tokens cost several times the visible answer.
+#
+# Recording what each call actually cost lets a caller pace on measurement.
+# Bounded, in-memory, and never consulted on the serving path, so production is
+# unaffected.
+# --------------------------------------------------------------------------
+
+_USAGE_WINDOW_SECONDS = 300
+_usage_log: deque[tuple[float, str, int]] = deque(maxlen=4096)
+_usage_lock = threading.Lock()
+
+
+def record_usage(model: str, total_tokens: int) -> None:
+    """Note that `model` just spent `total_tokens`."""
+    if total_tokens <= 0:
+        return
+    now = time.time()
+    with _usage_lock:
+        _usage_log.append((now, model, total_tokens))
+        cutoff = now - _USAGE_WINDOW_SECONDS
+        while _usage_log and _usage_log[0][0] < cutoff:
+            _usage_log.popleft()
+
+
+def tokens_used_since(model: str, seconds: float) -> int:
+    """Tokens `model` has spent in the last `seconds`. 0 if it has spent none."""
+    cutoff = time.time() - seconds
+    with _usage_lock:
+        return sum(t for ts, m, t in _usage_log if m == model and ts >= cutoff)
+
+
+# --------------------------------------------------------------------------
+# Daily-quota observation
+#
+# Groq enforces two limits with the same 429: tokens per minute, which a pause
+# clears, and tokens per DAY, which a pause does not. They are worth telling
+# apart, because the second one means every remaining call in a batch will fail
+# too. A behaviour run learned this expensively - it kept going for 17 minutes
+# after the budget was gone, failed 73 of 145 items, and still printed a
+# summary table of numbers that looked like measurements.
+#
+# Observation only: `complete` re-raises exactly as before, so production
+# degradation policy is unchanged. Batch callers poll this to stop early.
+# --------------------------------------------------------------------------
+
+_daily_quota_hits: dict[str, float] = {}
+
+
+def note_if_daily_quota(model: str, error_text: str) -> None:
+    """Record that `model` reported a per-DAY token limit, not a per-minute one."""
+    lowered = error_text.lower()
+    if "tokens per day" in lowered or "(tpd)" in lowered:
+        _daily_quota_hits[model] = time.time()
+        logfire.error(f"{model} has exhausted its daily token budget.")
+
+
+def daily_quota_exhausted(within_seconds: float = 600) -> set[str]:
+    """Models that reported a per-day token limit within the last `within_seconds`."""
+    cutoff = time.time() - within_seconds
+    return {m for m, ts in _daily_quota_hits.items() if ts >= cutoff}
+
+
+def clear_daily_quota_notes() -> None:
+    """Forget recorded exhaustion - for tests and for retrying after a reset."""
+    _daily_quota_hits.clear()

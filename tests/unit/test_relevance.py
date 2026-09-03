@@ -135,3 +135,164 @@ class TestIdentityPreservation:
         kept, _ = rs.select_relevant("q", [a, b])
         assert {c.source for c in kept} == {"a.html", "b.html"}
         assert len({c.id for c in kept}) == 2
+
+
+class TestEntailmentGate:
+    """
+    The gate that closes what the relevance threshold provably cannot: a
+    cross-encoder scores topical relatedness, so an in-domain question the
+    corpus does not cover can clear the threshold on shared vocabulary alone.
+    """
+
+    @pytest.mark.parametrize(
+        "verdict,answers",
+        [
+            ("YES", True),
+            ("yes", True),
+            ("Yes, passage 2 states it", True),
+            ("NO", False),
+            ("no.", False),
+            ("**NO**", False),
+            ("NO - the passages only mention the topic", False),
+            ("", True),  # unparseable must fail open, not silently refuse
+            ("maybe?", True),
+        ],
+    )
+    def test_verdict_parsing(self, verdict, answers):
+        from app.services.retrieval.entailment import _verdict_says_yes
+
+        assert _verdict_says_yes(verdict) is answers
+
+    def test_disabled_gate_passes_without_calling_a_model(self, monkeypatch):
+        from app.services.retrieval import entailment as ent
+
+        called = []
+        monkeypatch.setattr(settings, "ENTAILMENT_GATE_ENABLED", False)
+        monkeypatch.setattr(ent, "complete", lambda *a, **k: called.append(1))
+
+        answers, checked = ent.context_answers_question("q", [chunk(0)])
+        assert (answers, checked) == (True, False)
+        assert called == [], "a disabled gate must not spend a model call"
+
+    def test_empty_context_is_not_checked(self, monkeypatch):
+        from app.services.retrieval import entailment as ent
+
+        monkeypatch.setattr(settings, "ENTAILMENT_GATE_ENABLED", True)
+        assert ent.context_answers_question("q", []) == (True, False)
+
+    def test_rejects_when_model_says_no(self, monkeypatch):
+        from app.gateway import client as gw
+        from app.services.retrieval import entailment as ent
+
+        monkeypatch.setattr(settings, "ENTAILMENT_GATE_ENABLED", True)
+        monkeypatch.setattr(
+            ent, "complete", lambda *a, **k: gw.LLMResponse(content="NO", model="stub")
+        )
+        assert ent.context_answers_question("q", [chunk(0)]) == (False, True)
+
+    def test_accepts_when_model_says_yes(self, monkeypatch):
+        from app.gateway import client as gw
+        from app.services.retrieval import entailment as ent
+
+        monkeypatch.setattr(settings, "ENTAILMENT_GATE_ENABLED", True)
+        monkeypatch.setattr(
+            ent, "complete", lambda *a, **k: gw.LLMResponse(content="YES", model="stub")
+        )
+        assert ent.context_answers_question("q", [chunk(0)]) == (True, True)
+
+    def test_fails_open_when_model_unreachable(self, monkeypatch):
+        """
+        An outage here must not turn into mass false abstentions. The generator's
+        decline instruction is still downstream, so degrading to "allow" is the
+        same posture as the topical filter, for the same reason.
+        """
+        from app.gateway import client as gw
+        from app.services.retrieval import entailment as ent
+
+        def boom(*a, **k):
+            raise gw.LLMError("gate down")
+
+        monkeypatch.setattr(settings, "ENTAILMENT_GATE_ENABLED", True)
+        monkeypatch.setattr(ent, "complete", boom)
+        assert ent.context_answers_question("q", [chunk(0)]) == (True, False)
+
+    def test_only_top_k_passages_are_sent(self, monkeypatch):
+        from app.gateway import client as gw
+        from app.services.retrieval import entailment as ent
+
+        seen = {}
+
+        def capture(messages, **k):
+            seen["user"] = messages[1]["content"]
+            return gw.LLMResponse(content="YES", model="stub")
+
+        monkeypatch.setattr(settings, "ENTAILMENT_GATE_ENABLED", True)
+        monkeypatch.setattr(settings, "ENTAILMENT_TOP_K", 2)
+        monkeypatch.setattr(ent, "complete", capture)
+
+        ent.context_answers_question("q", [chunk(i, text=f"body{i}") for i in range(5)])
+        assert "body0" in seen["user"] and "body1" in seen["user"]
+        assert "body2" not in seen["user"], "sent more than ENTAILMENT_TOP_K passages"
+
+
+class TestMultiQueryRerank:
+    """
+    The cross-encoder is phrasing-sensitive enough to bury the right passage.
+
+    Measured on the live corpus: the passage stating "Only a RestartPolicy equal
+    to Never or OnFailure is allowed" scored 0.0003 against "What restart
+    policies can a Kubernetes Job use?" (rank 65 of 78) and 0.9997 against "Job
+    pod template restartPolicy Never OnFailure allowed" (rank 2). Reranking
+    against both phrasings and keeping the maximum is what makes that question
+    answerable.
+    """
+
+    @staticmethod
+    def _per_query_ranker(table: dict[str, list[float]], monkeypatch):
+        """Fake a cross-encoder whose scores depend on how the query is phrased."""
+
+        def _score(query, chunks):
+            for c, s in zip(chunks, table[query], strict=False):
+                c.rerank_score = s
+            return sorted(chunks, key=lambda c: c.rerank_score or 0.0, reverse=True)
+
+        monkeypatch.setattr(rs, "score_chunks", _score)
+
+    def test_keyword_phrasing_rescues_a_passage_the_prose_form_buries(self, monkeypatch):
+        self._per_query_ranker(
+            {
+                "what restart policies can a Job use": [0.99, 0.0003],
+                "Job restartPolicy Never OnFailure": [0.10, 0.9997],
+            },
+            monkeypatch,
+        )
+        chunks = [chunk(0, "pod failure policy"), chunk(1, "Only a RestartPolicy ...")]
+        kept, top = rs.select_relevant(
+            "what restart policies can a Job use",
+            chunks,
+            extra_queries=["Job restartPolicy Never OnFailure"],
+        )
+        assert top == pytest.approx(0.9997)
+        assert kept[0].text.startswith("Only a RestartPolicy")
+
+    def test_takes_the_max_not_the_last_score(self, monkeypatch):
+        """A weak alternative phrasing must not overwrite a strong primary score."""
+        self._per_query_ranker({"primary": [0.95], "weak alt": [0.01]}, monkeypatch)
+        kept, top = rs.select_relevant("primary", [chunk(0)], extra_queries=["weak alt"])
+        assert top == pytest.approx(0.95)
+        assert len(kept) == 1
+
+    def test_off_topic_stays_off_topic_under_both_phrasings(self, monkeypatch):
+        """Taking the max must not weaken abstention."""
+        self._per_query_ranker({"bake bread": [0.02], "sourdough starter": [0.03]}, monkeypatch)
+        kept, top = rs.select_relevant(
+            "bake bread", [chunk(0)], extra_queries=["sourdough starter"]
+        )
+        assert kept == []
+        assert top == pytest.approx(0.03)
+
+    def test_duplicate_and_empty_phrasings_are_ignored(self, monkeypatch):
+        self._per_query_ranker({"q": [0.9]}, monkeypatch)
+        kept, top = rs.select_relevant("q", [chunk(0)], extra_queries=["q", "", "   "])
+        assert top == pytest.approx(0.9)
+        assert len(kept) == 1

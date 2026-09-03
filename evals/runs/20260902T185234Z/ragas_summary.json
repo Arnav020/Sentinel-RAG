@@ -25,22 +25,27 @@
   "context_precision": {
     "metric": "context_precision",
     "error": "every sample failed to score",
-    "failed": 38
+    "failed": 23
   },
   "context_recall": {
     "metric": "context_recall",
-    "error": "every sample failed to score",
-    "failed": 38
+    "value": 0.8889,
+    "ci_low": 0.6667,
+    "ci_high": 1.0,
+    "n": 6,
+    "scored": 6,
+    "failed": 17,
+    "coverage": 0.261
   },
   "answer_correctness": {
     "metric": "answer_correctness",
     "error": "every sample failed to score",
-    "failed": 38
+    "failed": 23
   },
   "answer_relevancy": {
     "metric": "answer_relevancy",
     "error": "every sample failed to score",
-    "failed": 38
+    "failed": 23
   },
   "faithfulness_by_topic": {
     "architecture": {

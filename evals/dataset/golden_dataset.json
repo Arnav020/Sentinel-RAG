@@ -19,11 +19,22 @@
       "unanswerable_in_domain": "Selected by dropping candidates that cleared the relevance threshold, so their scores are bounded by construction. Do NOT calibrate the threshold on this subset - use off_domain, which is unfiltered.",
       "uncovered_retrieval_positive": "In-domain questions the corpus does not answer but retrieval scores highly anyway. Retrieval cannot decline these; the generator must. Graded on whether the answer declines rather than fabricates.",
       "pruned": "2 answerable item(s) removed: their source passage was boilerplate (repeated across documents) and is no longer indexed. Keeping them would have measured retrieval against content the corpus deliberately does not contain."
+    },
+    "naturalised": {
+      "model": "openai/gpt-oss-120b",
+      "intent_checked_by": "openai/gpt-oss-20b",
+      "naturalised": 79,
+      "kept_original": 4,
+      "answerable_total": 83,
+      "vocabulary_overlap_before": 0.659,
+      "vocabulary_overlap_after": 0.5822,
+      "vocabulary_overlap_change": -0.0769,
+      "note": "Answerable questions were rewritten in natural user voice by a model that never saw the source passage, removing the vocabulary leakage inherent in generating a question from the passage it is later measured against. Intent was verified by a second model; nothing was rejected for drift. 4 item(s) kept their original wording after repeated rewrite failures. The gold chunk, reference answer and entailment verification are unchanged - this removes one specific bias, not all of them, and the ground truth remains model-generated rather than human-authored. `question_original` preserves the pre-rewrite form."
     }
   },
   "items": [
     {
-      "question": "How do I use a PersistentVolume as a raw block device in a Pod?",
+      "question": "how to mount a PersistentVolume as a raw block device in a pod?",
       "reference": "You can set the value of volumeMode to Block to use a volume as a raw block device. Such volume is presented into a Pod as a block device, without any filesystem on it.",
       "question_type": "procedural",
       "gold_chunk_id": "f70865ba-99fc-5079-8324-6d912d0a12fd",
@@ -35,10 +46,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A001"
+      "id": "A001",
+      "question_original": "How do I use a PersistentVolume as a raw block device in a Pod?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which RestartPolicy values are appropriate for a Job?",
+      "question": "what restartpolicy values are valid for a job",
       "reference": "RestartPolicy equal to OnFailure or Never",
       "question_type": "factual",
       "gold_chunk_id": "ab1ae859-2740-5444-9dfc-346838e9aa8c",
@@ -50,10 +63,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A002"
+      "id": "A002",
+      "question_original": "Which RestartPolicy values are appropriate for a Job?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which API version is used for Workload and PodGroup objects created by the Job controller when WorkloadWithJob feature gate is enabled?",
+      "question": "what api version does the Job controller use for Workload and PodGroup when WorkloadWithJob is enabled?",
       "reference": "scheduling.k8s.io/v1beta1",
       "question_type": "exact_token",
       "gold_chunk_id": "d699ae36-581d-5618-8533-e6c3f68bdec0",
@@ -65,7 +80,9 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A003"
+      "id": "A003",
+      "question_original": "Which API version is used for Workload and PodGroup objects created by the Job controller when WorkloadWithJob feature gate is enabled?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
       "question": "When does CrashLoopBackOff appear in the Status field of kubectl commands?",
@@ -83,7 +100,7 @@
       "id": "A004"
     },
     {
-      "question": "What happens if a Pod's containers do not have the relevant resource request set when using per-pod resource metrics?",
+      "question": "what happens if a pod's containers lack resource requests when using per‑pod resource metrics",
       "reference": "Please note that if some of the Pod's containers do not have the relevant resource request set, CPU utilization for the Pod will not be defined and the autoscaler will not take any action for that metric.",
       "question_type": "factual",
       "gold_chunk_id": "6126b49e-29b9-57a1-a521-11cc041e3048",
@@ -95,10 +112,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A005"
+      "id": "A005",
+      "question_original": "What happens if a Pod's containers do not have the relevant resource request set when using per-pod resource metrics?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I mount a ConfigMap as a volume in a Pod?",
+      "question": "how to mount a ConfigMap as a volume in a Pod?",
       "reference": "Create a ConfigMap or use an existing one. Modify your Pod definition to add a volume under .spec.volumes[]. Name the volume anything, and have a .spec.volumes[].configMap.name field set to reference your ConfigMap object. Add a .spec.containers[].volumeMounts[] to each container that needs the ConfigMap. Specify .spec.containers[].volumeMounts[].readOnly = true and .spec.containers[].volumeMounts[].mountPath to an unused directory name where you would like the ConfigMap to appear. Modify your image or command line so that the program looks for files in that directory. Each key in the ConfigMap data map becomes the filename under mountPath .",
       "question_type": "procedural",
       "gold_chunk_id": "50bac049-cf05-5d49-b281-bfa4e22f59e6",
@@ -110,10 +129,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A006"
+      "id": "A006",
+      "question_original": "How do I mount a ConfigMap as a volume in a Pod?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do you configure a partitioned rolling update for a StatefulSet?",
+      "question": "how to configure a partitioned rolling update for a StatefulSet?",
       "reference": "The RollingUpdate update strategy can be partitioned, by specifying a .spec.updateStrategy.rollingUpdate.partition . If a partition is specified, all Pods with an ordinal that is greater than or equal to the partition will be updated when the StatefulSet's .spec.template is updated. All Pods with an ordinal that is less than the partition will not be updated, and, even if they are deleted, they will be recreated at the previous version. If a StatefulSet's .spec.updateStrategy.rollingUpdate.partition is greater than its .spec.replicas , updates to its .spec.template will not be propagated to its Pods.",
       "question_type": "procedural",
       "gold_chunk_id": "0a0c053c-0ba9-53c0-9662-d82c15fbb6cb",
@@ -125,10 +146,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A007"
+      "id": "A007",
+      "question_original": "How do you configure a partitioned rolling update for a StatefulSet?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What does the FailedScheduling event message indicate when a pod is pending?",
+      "question": "what does a FailedScheduling event mean when a pod is pending?",
       "reference": "0/42 nodes available: insufficient cpu",
       "question_type": "factual",
       "gold_chunk_id": "6ebbe00e-a20c-5b7e-8c13-d5b820bf37ba",
@@ -140,10 +163,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A008"
+      "id": "A008",
+      "question_original": "What does the FailedScheduling event message indicate when a pod is pending?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I update the nginx image in a deployment to version 1.16.1?",
+      "question": "how to update a deployment's nginx image to 1.16.1?",
       "reference": "kubectl set image deployment.v1.apps/nginx-deployment nginx=nginx:1.16.1 or kubectl set image deployment/nginx-deployment nginx=nginx:1.16.1",
       "question_type": "procedural",
       "gold_chunk_id": "3e319e3b-6ce8-5c8d-8ea0-29aa9eae91bd",
@@ -155,10 +180,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A009"
+      "id": "A009",
+      "question_original": "How do I update the nginx image in a deployment to version 1.16.1?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is the parallelism value of job-wq-2?",
+      "question": "what is the parallelism value for job-wq-2?",
       "reference": "Parallelism:      2",
       "question_type": "factual",
       "gold_chunk_id": "a0aded96-1e79-5ee6-9b64-a560632df17d",
@@ -170,10 +197,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A010"
+      "id": "A010",
+      "question_original": "What is the parallelism value of job-wq-2?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What determines the set of Pods targeted by a Service?",
+      "question": "what decides which pods a Service targets?",
       "reference": "The set of Pods targeted by a Service is usually determined by a selector that you define.",
       "question_type": "factual",
       "gold_chunk_id": "5bf068e2-efe4-525d-9746-4f6f0cb18675",
@@ -185,10 +214,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A012"
+      "id": "A012",
+      "question_original": "What determines the set of Pods targeted by a Service?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is the default value for initialDelaySeconds in Kubernetes probes?",
+      "question": "default initialDelaySeconds value for Kubernetes probes?",
       "reference": "Defaults to 0 seconds.",
       "question_type": "factual",
       "gold_chunk_id": "9eeacf45-f869-5005-97da-a37c5977a3a4",
@@ -200,10 +231,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A013"
+      "id": "A013",
+      "question_original": "What is the default value for initialDelaySeconds in Kubernetes probes?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What are the advantages of running daemon processes via a DaemonSet?",
+      "question": "what are the benefits of using a DaemonSet for daemon processes?",
       "reference": "- Ability to monitor and manage logs for daemons in the same way as applications.\n- Same config language and tools (e.g. Pod templates, kubectl ) for daemons and applications.\n- Running daemons in containers with resource limits increases isolation between daemons from app containers.",
       "question_type": "factual",
       "gold_chunk_id": "77e3b9ca-8d76-57dd-affe-43a15773ee34",
@@ -215,10 +248,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A014"
+      "id": "A014",
+      "question_original": "What are the advantages of running daemon processes via a DaemonSet?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What feature gate controls recursive read-only mounts?",
+      "question": "which feature gate controls recursive read-only mounts?",
       "reference": "RecursiveReadOnlyMounts",
       "question_type": "exact_token",
       "gold_chunk_id": "652bdbab-0987-52c3-b859-0c9bae98dc37",
@@ -230,10 +265,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A015"
+      "id": "A015",
+      "question_original": "What feature gate controls recursive read-only mounts?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Do I need to create a Service before the client Pods when using the environment variable method to publish the port and cluster IP?",
+      "question": "Do I have to create the Service before the client Pods when using env vars to publish the port and cluster IP?",
       "reference": "When you have a Pod that needs to access a Service, and you are using the environment variable method to publish the port and cluster IP to the client Pods, you must create the Service before the client Pods come into existence. Otherwise, those client Pods won't have their environment variables populated.",
       "question_type": "factual",
       "gold_chunk_id": "3ae48d39-dfd9-53a3-9b7f-9476ee72f5d4",
@@ -245,10 +282,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A016"
+      "id": "A016",
+      "question_original": "Do I need to create a Service before the client Pods when using the environment variable method to publish the port and cluster IP?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What status condition does the HPA set when it scales a workload to zero?",
+      "question": "what condition does HPA set when it scales to zero?",
       "reference": "ScaledToZero condition set to True on the HorizontalPodAutoscaler's status",
       "question_type": "factual",
       "gold_chunk_id": "b1c74b98-dc5e-5bc6-8e82-493102c9554b",
@@ -260,10 +299,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 0.857,
-      "id": "A017"
+      "id": "A017",
+      "question_original": "What status condition does the HPA set when it scales a workload to zero?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which Secret type should I use for SSH authentication in Kubernetes?",
+      "question": "what secret type should I use for SSH authentication in Kubernetes?",
       "reference": "The SSH authentication Secret type is provided only for convenience. You can create an Opaque type for credentials used for SSH authentication. However, using the defined and public Secret type ( kubernetes.io/ssh-auth ) helps other people to understand the purpose of your Secret, and sets a convention for what key names to expect. The Kubernetes API verifies that the required keys are set for a Secret of this type.",
       "question_type": "factual",
       "gold_chunk_id": "e2a5f2f4-dabd-5e10-8c49-8786bff3ee8c",
@@ -275,10 +316,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A018"
+      "id": "A018",
+      "question_original": "Which Secret type should I use for SSH authentication in Kubernetes?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Since which Kubernetes release is Pod failure policy stable?",
+      "question": "since which k8s release is pod failure policy stable?",
       "reference": "This is a stable feature in Kubernetes, and has been since the 1.31 release.",
       "question_type": "factual",
       "gold_chunk_id": "7b83ee91-65ca-5511-a9fc-921c79c4a9dd",
@@ -290,10 +333,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A019"
+      "id": "A019",
+      "question_original": "Since which Kubernetes release is Pod failure policy stable?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I request a resize of a Pod’s CPU and memory resources?",
+      "question": "how to request a pod cpu and memory resize?",
       "reference": "You can request a resize by updating the desired requests and limits in the Pod's specification. This is typically done using kubectl patch, kubectl apply, or kubectl edit targeting the Pod's resize subresource.",
       "question_type": "procedural",
       "gold_chunk_id": "a3a46e1a-c39a-5b38-be36-ab4ba15a5709",
@@ -305,10 +350,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A020"
+      "id": "A020",
+      "question_original": "How do I request a resize of a Pod’s CPU and memory resources?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I recursively apply kubectl operations on subdirectories?",
+      "question": "how can I run kubectl recursively on subfolders?",
       "reference": "Use the --recursive or -R flag alongside the --filename / -f argument to recursively perform operations on subdirectories.",
       "question_type": "procedural",
       "gold_chunk_id": "be8fa3d9-467b-5a1d-903c-2c05333a246b",
@@ -320,10 +367,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 0.636,
-      "id": "A021"
+      "id": "A021",
+      "question_original": "How do I recursively apply kubectl operations on subdirectories?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is the Restricted policy aimed at enforcing?",
+      "question": "what does the Restricted policy enforce?",
       "reference": "The Restricted policy is aimed at enforcing current Pod hardening best practices, at the expense of some compatibility.",
       "question_type": "factual",
       "gold_chunk_id": "4cbacab2-313c-52af-9d71-bae786a8c175",
@@ -335,10 +384,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A022"
+      "id": "A022",
+      "question_original": "What is the Restricted policy aimed at enforcing?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What are some examples of Kubernetes addons?",
+      "question": "examples of Kubernetes addons?",
       "reference": "Addons extend the functionality of Kubernetes. A few important examples include:\n\nDNS For cluster-wide DNS resolution. Web UI (Dashboard) For cluster management via a web interface. Container Resource Monitoring For collecting and storing container metrics. Cluster-level Logging For saving container logs to a central log store.",
       "question_type": "factual",
       "gold_chunk_id": "28fe8db9-3785-52cd-ad74-201502d68525",
@@ -350,10 +401,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A023"
+      "id": "A023",
+      "question_original": "What are some examples of Kubernetes addons?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How can a pod ensure it can reach certain destinations before its app containers start?",
+      "question": "how to make a pod check connectivity to destinations before starting app containers?",
       "reference": "If you need to make sure the pod can reach certain destinations before being started, you can use an init container to wait for those destinations to be reachable before kubelet starts the app containers.",
       "question_type": "procedural",
       "gold_chunk_id": "db4a6b6c-5a34-5680-ad2b-cb86b63166b9",
@@ -365,10 +418,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A024"
+      "id": "A024",
+      "question_original": "How can a pod ensure it can reach certain destinations before its app containers start?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Will a new NetworkPolicy that denies an existing connection close that connection?",
+      "question": "does a new NetworkPolicy that blocks an existing connection terminate that connection?",
       "reference": "When the set of NetworkPolicies that applies to an existing connection changes ... it is implementation defined as to whether the change will take effect for that existing connection or not. Example: A policy is created that leads to denying a previously allowed connection, the underlying network plugin implementation is responsible for defining if that new policy will close the existing connections or not.",
       "question_type": "factual",
       "gold_chunk_id": "cdd70931-b370-5d54-a6e5-d81c5e1b69e5",
@@ -380,10 +435,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 0.971,
-      "id": "A025"
+      "id": "A025",
+      "question_original": "Will a new NetworkPolicy that denies an existing connection close that connection?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which feature gate must be enabled to see terminating pods?",
+      "question": "what feature gate needs to be on to view terminating pods",
       "reference": "DeploymentReplicaSetTerminatingReplicas",
       "question_type": "exact_token",
       "gold_chunk_id": "01eb862c-c532-502c-ad60-16d75a354c3d",
@@ -395,10 +452,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A026"
+      "id": "A026",
+      "question_original": "Which feature gate must be enabled to see terminating pods?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is the difference between a Role and a ClusterRole in Kubernetes RBAC?",
+      "question": "difference between Role and ClusterRole in K8s RBAC?",
       "reference": "A Role always sets permissions within a particular namespace ; when you create a Role, you have to specify the namespace it belongs in.\n\nClusterRole, by contrast, is a non-namespaced resource.",
       "question_type": "factual",
       "gold_chunk_id": "5f498e99-a097-5028-91c2-a2e703185ba1",
@@ -410,10 +469,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A027"
+      "id": "A027",
+      "question_original": "What is the difference between a Role and a ClusterRole in Kubernetes RBAC?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which metric types support scaling to zero with a HorizontalPodAutoscaler?",
+      "question": "what metric types can HPA scale to zero with?",
       "reference": "Scaling to zero is only supported for object and external metrics. It is not available for resource metrics (such as CPU or memory utilization).",
       "question_type": "factual",
       "gold_chunk_id": "26677b62-8b75-5f5d-ab5f-8fc2c4af91fa",
@@ -425,10 +486,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A028"
+      "id": "A028",
+      "question_original": "Which metric types support scaling to zero with a HorizontalPodAutoscaler?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What apiGroups are specified in the ClusterRole example?",
+      "question": "what apiGroups are in the ClusterRole example?",
       "reference": "apiGroups: [\"\"]",
       "question_type": "exact_token",
       "gold_chunk_id": "b7746421-a21d-57e4-918c-e5d1574caf10",
@@ -440,10 +503,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A029"
+      "id": "A029",
+      "question_original": "What apiGroups are specified in the ClusterRole example?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What should I check to determine if a pod is stuck because of a finalizer and an admission webhook?",
+      "question": "how to tell if a pod is stuck by a finalizer or an admission webhook?",
       "reference": "Check if your cluster has any ValidatingWebhookConfiguration or MutatingWebhookConfiguration that target UPDATE operations for pods resources.",
       "question_type": "factual",
       "gold_chunk_id": "eb79d1aa-da30-552b-b07a-2cace38c44dc",
@@ -455,10 +520,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A030"
+      "id": "A030",
+      "question_original": "What should I check to determine if a pod is stuck because of a finalizer and an admission webhook?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What are the allowed values for spec.containers[*].securityContext.procMount?",
+      "question": "what values can spec.containers[*].securityContext.procMount be?",
       "reference": "Allowed Values Undefined/nil",
       "question_type": "factual",
       "gold_chunk_id": "ddeae6a3-e3bf-57eb-aac7-37302fdf1de7",
@@ -470,10 +537,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A031"
+      "id": "A031",
+      "question_original": "What are the allowed values for spec.containers[*].securityContext.procMount?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which tool from the busybox container image is used for reversing strings in the example?",
+      "question": "what busybox tool reverses strings in the example?",
       "reference": "You'll use the rev tool from the busybox container image.",
       "question_type": "factual",
       "gold_chunk_id": "03dff347-ba4b-53db-8e3f-25e9ab741f67",
@@ -485,10 +554,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A032"
+      "id": "A032",
+      "question_original": "Which tool from the busybox container image is used for reversing strings in the example?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which Kubernetes versions introduced elastic Indexed Jobs?",
+      "question": "what k8s version added elastic indexed jobs",
       "reference": "This is a stable feature in , and has been since version 1.31. It was first available in the v1.27 release.",
       "question_type": "factual",
       "gold_chunk_id": "8b4b86d9-07c2-5980-8d94-aa77291814c1",
@@ -500,7 +571,9 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A033"
+      "id": "A033",
+      "question_original": "Which Kubernetes versions introduced elastic Indexed Jobs?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
       "question": "What egress traffic does the example NetworkPolicy allow?",
@@ -518,7 +591,7 @@
       "id": "A034"
     },
     {
-      "question": "What value must spec.managedBy be set to in order to disable the built-in Job controller?",
+      "question": "what spec.managedBy value disables the built-in Job controller?",
       "reference": "spec.managedBy field - any value other than kubernetes.io/job-controller",
       "question_type": "exact_token",
       "gold_chunk_id": "7f5e9302-5c68-5981-9717-5490dea3a412",
@@ -530,10 +603,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A035"
+      "id": "A035",
+      "question_original": "What value must spec.managedBy be set to in order to disable the built-in Job controller?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What type of filesystem backs a secret volume?",
+      "question": "what filesystem backs a secret volume?",
       "reference": "secret volumes are backed by tmpfs (a RAM-backed filesystem), so they are never written to non-volatile storage.",
       "question_type": "factual",
       "gold_chunk_id": "1ae90b23-be86-5142-8b37-5f8cbb9c4659",
@@ -545,10 +620,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A036"
+      "id": "A036",
+      "question_original": "What type of filesystem backs a secret volume?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What taint does the control plane add when the DiskPressure node condition is active?",
+      "question": "what taint does the control plane add for DiskPressure node condition?",
       "reference": "The control plane adds the node.kubernetes.io/disk-pressure taint",
       "question_type": "factual",
       "gold_chunk_id": "d75206e4-29f8-5c12-a93c-9d80bfcde85c",
@@ -560,10 +637,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A037"
+      "id": "A037",
+      "question_original": "What taint does the control plane add when the DiskPressure node condition is active?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What annotation do I add to a Service to create an internal load balancer on IBM Cloud?",
+      "question": "what annotation adds an internal load balancer to a Service on IBM Cloud?",
       "reference": "service.kubernetes.io/ibm-load-balancer-cloud-provider-ip-type: \"private\"",
       "question_type": "exact_token",
       "gold_chunk_id": "1f7196c7-7e44-58bb-b829-b799e7576ac0",
@@ -575,10 +654,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A038"
+      "id": "A038",
+      "question_original": "What annotation do I add to a Service to create an internal load balancer on IBM Cloud?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is the purpose of the document that catalogs communication paths between the API server and the Kubernetes cluster?",
+      "question": "what’s the doc that lists API server ↔ cluster communication paths used for?",
       "reference": "This document catalogs the communication paths between the API server and the Kubernetes cluster . The intent is to allow users to customize their installation to harden the network configuration such that the cluster can be run on an untrusted network (or on fully public IPs on a cloud provider).",
       "question_type": "factual",
       "gold_chunk_id": "59de9fef-b556-5b0d-9414-9ba38adec884",
@@ -590,10 +671,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A039"
+      "id": "A039",
+      "question_original": "What is the purpose of the document that catalogs communication paths between the API server and the Kubernetes cluster?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "When should I use a Pod that runs multiple containers?",
+      "question": "when is it appropriate to run multiple containers in one pod?",
       "reference": "You should use this pattern only in specific instances in which your containers are tightly coupled.",
       "question_type": "factual",
       "gold_chunk_id": "7945acda-556d-5b91-a899-d7bb9180c02c",
@@ -605,10 +688,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A040"
+      "id": "A040",
+      "question_original": "When should I use a Pod that runs multiple containers?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What happens to running Pods when a Job is suspended?",
+      "question": "what happens to pods that are running when a job is suspended?",
       "reference": "When you suspend a Job, any running Pods that don't have a status of Completed will be terminated with a SIGTERM signal. The Pod's graceful termination period will be honored and your Pod must handle this signal in this period. Pods terminated this way will not count towards the Job's completions count.",
       "question_type": "factual",
       "gold_chunk_id": "769ece3f-066e-595d-9b8b-a13ea80e2185",
@@ -620,7 +705,9 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A041"
+      "id": "A041",
+      "question_original": "What happens to running Pods when a Job is suspended?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
       "question": "What Docker Hub image version is used for the nginx container in the Deployment?",
@@ -638,7 +725,7 @@
       "id": "A042"
     },
     {
-      "question": "Which DNS names can a Windows Pod resolve for the Kubernetes service?",
+      "question": "what DNS names can a Windows pod resolve for a k8s service?",
       "reference": "Inside a Windows Pod, you can resolve both kubernetes.default.svc.cluster.local and kubernetes, but not the partially qualified names (kubernetes.default or kubernetes.default.svc).",
       "question_type": "factual",
       "gold_chunk_id": "8201e7cc-9278-526e-a9c6-fbfb6db76352",
@@ -650,10 +737,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A043"
+      "id": "A043",
+      "question_original": "Which DNS names can a Windows Pod resolve for the Kubernetes service?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do you configure a startup probe to protect slow starting containers?",
+      "question": "how to set up a startupProbe for slow‑starting containers?",
       "reference": "Use the same command, HTTP or TCP check, with a failureThreshold * periodSeconds long enough to cover the worst case startup time.",
       "question_type": "procedural",
       "gold_chunk_id": "72172916-d11e-5e6f-8941-d9845ffdc96a",
@@ -665,10 +754,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 0.941,
-      "id": "A044"
+      "id": "A044",
+      "question_original": "How do you configure a startup probe to protect slow starting containers?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is the storageClassName specified in this PersistentVolumeClaim?",
+      "question": "what storageClassName is set on this PersistentVolumeClaim?",
       "reference": "storageClassName: slow",
       "question_type": "exact_token",
       "gold_chunk_id": "e7f759f8-d2fb-50c5-91de-8c6f446afdc6",
@@ -680,10 +771,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A045"
+      "id": "A045",
+      "question_original": "What is the storageClassName specified in this PersistentVolumeClaim?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What access mode allows a volume to be mounted as read-write by a single pod across the whole cluster?",
+      "question": "which access mode lets a volume be read‑write for a single pod across the cluster?",
       "reference": "ReadWriteOncePod",
       "question_type": "exact_token",
       "gold_chunk_id": "3d4e7aed-d4f2-56bb-ae35-4c95472ac733",
@@ -695,10 +788,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A046"
+      "id": "A046",
+      "question_original": "What access mode allows a volume to be mounted as read-write by a single pod across the whole cluster?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What are the valid values for the appProtocol field in a Service definition?",
+      "question": "what values can appProtocol have in a Service definition?",
       "reference": "Valid values are one of: IANA standard service names, implementation-defined prefixed names such as mycompany.com/my-custom-protocol, Kubernetes-defined prefixed names.",
       "question_type": "factual",
       "gold_chunk_id": "b86b487b-51d6-5a04-ab48-915e7e3351a5",
@@ -710,10 +805,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 0.929,
-      "id": "A047"
+      "id": "A047",
+      "question_original": "What are the valid values for the appProtocol field in a Service definition?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which hostPath type ensures a file is created if it does not exist?",
+      "question": "which hostPath type creates the file if it doesn't exist",
       "reference": "type: FileOrCreate",
       "question_type": "factual",
       "gold_chunk_id": "8cb3b095-4dd3-54b6-bcf9-97e23dd5e87c",
@@ -725,10 +822,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A048"
+      "id": "A048",
+      "question_original": "Which hostPath type ensures a file is created if it does not exist?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which API exposes the metrics collected by the metrics-server?",
+      "question": "what API serves metrics‑server metrics?",
       "reference": "The resource metrics pipeline provides a limited set of metrics related to cluster components such as the Horizontal Pod Autoscaler controller, as well as the kubectl top utility. These metrics are collected by the lightweight, short-term, in-memory metrics-server and are exposed via the metrics.k8s.io API.",
       "question_type": "factual",
       "gold_chunk_id": "9e9e3282-e3cc-59bf-9e45-efeb11a31e29",
@@ -740,10 +839,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A049"
+      "id": "A049",
+      "question_original": "Which API exposes the metrics collected by the metrics-server?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which containers are restarted when RestartAllContainers is triggered?",
+      "question": "Which containers get restarted when RestartAllContainers fires?",
       "reference": "The entire Pod, including the setup-environment init container and the main-application container, is then restarted in-place.",
       "question_type": "factual",
       "gold_chunk_id": "a7458d3c-2427-557d-87af-3e135c588af7",
@@ -755,10 +856,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A050"
+      "id": "A050",
+      "question_original": "Which containers are restarted when RestartAllContainers is triggered?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which feature gate enables kube-scheduler to preempt lower-priority Pods for deferred in-place resize requests?",
+      "question": "which feature gate lets kube-scheduler preempt lower‑priority pods for deferred in‑place resize requests?",
       "reference": "InPlacePodVerticalScalingSchedulerPreemption",
       "question_type": "exact_token",
       "gold_chunk_id": "5c899932-efeb-5794-9f2f-81568716d311",
@@ -770,10 +873,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A051"
+      "id": "A051",
+      "question_original": "Which feature gate enables kube-scheduler to preempt lower-priority Pods for deferred in-place resize requests?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "When both succeededIndexes and succeededCount are specified in a Job's successPolicy, what condition causes the Job to be marked succeeded?",
+      "question": "when both succeededIndexes and succeededCount are set in a Job's successPolicy, what triggers the Job to be marked succeeded?",
       "reference": "When you specify both succeededIndexes and succeededCount , once the number of succeeded indexes from the subset of indexes specified in the succeededIndexes reaches the succeededCount , the job controller marks the Job as succeeded.",
       "question_type": "factual",
       "gold_chunk_id": "f9fa3867-1e4e-568a-8aad-9f0c24d5c318",
@@ -785,10 +890,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A052"
+      "id": "A052",
+      "question_original": "When both succeededIndexes and succeededCount are specified in a Job's successPolicy, what condition causes the Job to be marked succeeded?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which resource should be specified first in a manifest to ensure pods are scheduled correctly?",
+      "question": "what resource needs to be listed first in a manifest so pods schedule correctly",
       "reference": "The resources will be created in the order they appear in the manifest. Therefore, it's best to specify the Service first, since that will ensure the scheduler can spread the pods associated with the Service as they are created by the controller(s), such as Deployment.",
       "question_type": "factual",
       "gold_chunk_id": "50fe3bf2-2848-5cb9-972d-aca8c71404f8",
@@ -800,10 +907,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A053"
+      "id": "A053",
+      "question_original": "Which resource should be specified first in a manifest to ensure pods are scheduled correctly?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Where should etcd clusters be run to guarantee resource requirements?",
+      "question": "where must etcd clusters be run to meet resource requirements?",
       "reference": "run etcd clusters on dedicated machines or isolated environments for guaranteed resource requirements",
       "question_type": "factual",
       "gold_chunk_id": "714eacb2-9442-5073-b4a9-aab6f21cac88",
@@ -815,10 +924,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A054"
+      "id": "A054",
+      "question_original": "Where should etcd clusters be run to guarantee resource requirements?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I enable RBAC on the API server?",
+      "question": "how to enable RBAC on the API server?",
       "reference": "To enable RBAC, start the API server with the --authorization-config flag set to a file that includes the RBAC authorizer; for example:",
       "question_type": "procedural",
       "gold_chunk_id": "735145ac-6ea8-5a46-a174-8cb582844f05",
@@ -830,10 +941,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A055"
+      "id": "A055",
+      "question_original": "How do I enable RBAC on the API server?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I generate multiple Kubernetes Job resources with names jobexample-apple, jobexample-banana, and jobexample-cherry using a Jinja template?",
+      "question": "how to generate jobexample-apple, jobexample-banana, jobexample-cherry with a Jinja template?",
       "reference": "{% set params = [{ \"name\": \"apple\", \"url\": \"http://dbpedia.org/resource/Apple\", },{ \"name\": \"banana\", \"url\": \"http://dbpedia.org/resource/Banana\", },{ \"name\": \"cherry\", \"url\": \"http://dbpedia.org/resource/Cherry\" }] %}\n{% for p in params %}\n{% set name = p[\"name\"] %}\n{% set url = p[\"url\"] %}\n---\napiVersion: batch/v1\nkind: Job\nmetadata:\n  name: jobexample-{{ name }}\n  labels:\n    jobgroup: jobexample\nspec:\n  template:\n    metadata:\n      name: jobexample\n      labels:\n        jobgroup: jobexample\n    spec:\n      containers:\n      - name: c\n        image: busybox:1.28\n        command: [\"sh\", \"-c\", \"echo Processing URL {{ url }} && sleep 5\"]\n      restartPolicy: Never\n{% endfor %}",
       "question_type": "procedural",
       "gold_chunk_id": "37619a38-54e3-5a73-a17a-6862afcfd04a",
@@ -845,10 +958,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A056"
+      "id": "A056",
+      "question_original": "How do I generate multiple Kubernetes Job resources with names jobexample-apple, jobexample-banana, and jobexample-cherry using a Jinja template?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How can I delete a DaemonSet but keep its Pods on the nodes?",
+      "question": "how to delete a daemonset while preserving its pods on the nodes",
       "reference": "If you specify --cascade=orphan with kubectl , then the Pods will be left on the nodes.",
       "question_type": "procedural",
       "gold_chunk_id": "d06cc113-22cd-5fb6-a975-4ec79661eac5",
@@ -860,10 +975,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A057"
+      "id": "A057",
+      "question_original": "How can I delete a DaemonSet but keep its Pods on the nodes?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is the default reclaimPolicy for dynamically created PersistentVolumes when no reclaimPolicy is specified in the StorageClass?",
+      "question": "what's the default reclaimPolicy for PVs created dynamically when the StorageClass doesn't set one?",
       "reference": "PersistentVolumes that are dynamically created by a StorageClass will have the reclaim policy specified in the reclaimPolicy field of the class, which can be either Delete or Retain. If no reclaimPolicy is specified when a StorageClass object is created, it will default to Delete.",
       "question_type": "factual",
       "gold_chunk_id": "720f1a47-2ba2-57ad-b190-a15d22327fcb",
@@ -875,10 +992,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 0.917,
-      "id": "A058"
+      "id": "A058",
+      "question_original": "What is the default reclaimPolicy for dynamically created PersistentVolumes when no reclaimPolicy is specified in the StorageClass?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which default roles can manage the custom resource CronTab and which can only read it?",
+      "question": "which default roles can manage CronTab and which only read it",
       "reference": "The following ClusterRoles let the \"admin\" and \"edit\" default roles manage the custom resource named CronTab, whereas the \"view\" role can perform only read actions on CronTab resources.",
       "question_type": "factual",
       "gold_chunk_id": "4d7e22ea-e229-5507-be7b-98de7cba7872",
@@ -890,10 +1009,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A059"
+      "id": "A059",
+      "question_original": "Which default roles can manage the custom resource CronTab and which can only read it?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I check the kubectl version?",
+      "question": "how do i check kubectl version?",
       "reference": "kubectl version",
       "question_type": "factual",
       "gold_chunk_id": "8a006df0-2967-5ad0-98bd-f27db314cb0d",
@@ -905,10 +1026,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A060"
+      "id": "A060",
+      "question_original": "How do I check the kubectl version?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do you replace or update a Node that has changed significantly?",
+      "question": "how to replace or update a significantly changed node?",
       "reference": "If the Node needs to be replaced or updated significantly, the existing Node object needs to be removed from API server first and re-added after the update.",
       "question_type": "procedural",
       "gold_chunk_id": "00d77bbe-65c5-5fb8-9474-6b82d101951d",
@@ -920,10 +1043,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A061"
+      "id": "A061",
+      "question_original": "How do you replace or update a Node that has changed significantly?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do you configure an IngressClass to use namespace-scoped parameters?",
+      "question": "how to configure an IngressClass to use namespace‑scoped parameters",
       "reference": "If you set the .spec.parameters field and set .spec.parameters.scope to Namespace , then the IngressClass refers to a namespaced-scoped resource. You must also set the namespace field within .spec.parameters to the namespace that contains the parameters you want to use.",
       "question_type": "procedural",
       "gold_chunk_id": "fd039d16-85eb-5898-b095-67e1ea4027cc",
@@ -935,10 +1060,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A062"
+      "id": "A062",
+      "question_original": "How do you configure an IngressClass to use namespace-scoped parameters?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which resource does the Job controller create to run Jobs?",
+      "question": "what resource does the job controller create to run jobs?",
       "reference": "In this case something else creates the Jobs, whereas the Job controller creates Pods.",
       "question_type": "factual",
       "gold_chunk_id": "7b799c08-8bfc-5397-987c-dad92eff0a56",
@@ -950,10 +1077,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A063"
+      "id": "A063",
+      "question_original": "Which resource does the Job controller create to run Jobs?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Where is an OCI image volume mounted?",
+      "question": "where does an OCI image volume get mounted?",
       "reference": "The OCI object gets mounted in a single directory ( spec.containers[*].volumeMounts[*].mountPath )",
       "question_type": "factual",
       "gold_chunk_id": "1f8b680b-7977-557e-87f2-51532524c144",
@@ -965,10 +1094,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A064"
+      "id": "A064",
+      "question_original": "Where is an OCI image volume mounted?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "If the key is empty, what operator must be used in a taint?",
+      "question": "if taint key is empty, which operator must be used?",
       "reference": "If the key is empty, then the operator must be Exists , which matches all keys and values.",
       "question_type": "factual",
       "gold_chunk_id": "5eb5796d-9e10-560c-be6e-95703c7547cb",
@@ -980,10 +1111,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A065"
+      "id": "A065",
+      "question_original": "If the key is empty, what operator must be used in a taint?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is cluster-level logging?",
+      "question": "what is cluster‑level logging?",
       "reference": "In a cluster, logs should have a separate storage and lifecycle independent of nodes, pods, or containers. This concept is called cluster-level logging.",
       "question_type": "factual",
       "gold_chunk_id": "6bc9c674-56c0-51ee-a451-5e1214f768ec",
@@ -995,10 +1128,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A066"
+      "id": "A066",
+      "question_original": "What is cluster-level logging?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What must a user have to create or update a role binding?",
+      "question": "what permissions does a user need to create or update a rolebinding",
       "reference": "You can only create/update a role binding if you already have all the permissions contained in the referenced role (at the same scope as the role binding) or if you have been authorized to perform the bind verb on the referenced role.",
       "question_type": "factual",
       "gold_chunk_id": "8555325b-ed2f-51b5-9e76-6f2566a73efd",
@@ -1010,10 +1145,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A067"
+      "id": "A067",
+      "question_original": "What must a user have to create or update a role binding?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I push configuration changes to the cluster?",
+      "question": "how do I push config changes to the cluster?",
       "reference": "use kubectl apply",
       "question_type": "procedural",
       "gold_chunk_id": "85c0bc83-f4b7-5d97-9618-4abfbc21eadb",
@@ -1025,10 +1162,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A068"
+      "id": "A068",
+      "question_original": "How do I push configuration changes to the cluster?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What happens if a StorageClass specifies mount options but the volume plugin does not support them?",
+      "question": "what happens if a StorageClass has mountOptions but the volume plugin doesn't support them?",
       "reference": "If the volume plugin does not support mount options but mount options are specified, provisioning will fail.",
       "question_type": "factual",
       "gold_chunk_id": "27361413-0568-5ccc-8cef-8286a498717c",
@@ -1040,10 +1179,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A069"
+      "id": "A069",
+      "question_original": "What happens if a StorageClass specifies mount options but the volume plugin does not support them?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How can I delete a Job but keep its pods running?",
+      "question": "how to delete a Job but keep its pods running",
       "reference": "kubectl delete jobs/old --cascade=orphan",
       "question_type": "procedural",
       "gold_chunk_id": "7914ae9f-d8e3-5874-85c3-fb25db3f0b3a",
@@ -1055,10 +1196,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A070"
+      "id": "A070",
+      "question_original": "How can I delete a Job but keep its pods running?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What command-line utility is required for basic templating?",
+      "question": "which CLI utility is needed for basic templating?",
       "reference": "For basic templating you need the command-line utility sed .",
       "question_type": "factual",
       "gold_chunk_id": "31c47da0-1dc2-5079-8d17-149758d1d7b7",
@@ -1070,10 +1213,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A071"
+      "id": "A071",
+      "question_original": "What command-line utility is required for basic templating?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is the max surge percentage in the rolling update strategy?",
+      "question": "what's the max surge % in a rolling update strategy?",
       "reference": "RollingUpdateStrategy: 25% max unavailable, 25% max surge",
       "question_type": "exact_token",
       "gold_chunk_id": "7a9973ff-b3b4-5e8c-8770-ec2201579578",
@@ -1085,10 +1230,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A072"
+      "id": "A072",
+      "question_original": "What is the max surge percentage in the rolling update strategy?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What action does the podFailurePolicy rule with onExitCodes values [42] take?",
+      "question": "what does a podFailurePolicy rule with onExitCodes [42] do?",
       "reference": "action: FailJob",
       "question_type": "factual",
       "gold_chunk_id": "8c14242f-0018-560c-b27a-033b4d39eaea",
@@ -1100,10 +1247,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A073"
+      "id": "A073",
+      "question_original": "What action does the podFailurePolicy rule with onExitCodes values [42] take?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What IP and port can clients use to access the Service named \"my-service\"?",
+      "question": "what ip and port do clients use to reach service my-service?",
       "reference": "In the example below, the Service named \"my-service\" can be accessed by clients using TCP, on \"198.51.100.32:80\" (calculated from .spec.externalIPs[] and .spec.ports[].port ).",
       "question_type": "factual",
       "gold_chunk_id": "697b5e2a-1faf-5d0d-9455-17db8e17e9e5",
@@ -1115,10 +1264,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A074"
+      "id": "A074",
+      "question_original": "What IP and port can clients use to access the Service named \"my-service\"?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which environment variable contains the pod index for an indexed Kubernetes Job?",
+      "question": "what env var holds the pod index for an indexed job?",
       "reference": "The control plane automatically sets the downward API to expose the index in the JOB_COMPLETION_INDEX environment variable.",
       "question_type": "exact_token",
       "gold_chunk_id": "bc93bb36-1d96-570e-b45a-7a41647f0563",
@@ -1130,10 +1281,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A075"
+      "id": "A075",
+      "question_original": "Which environment variable contains the pod index for an indexed Kubernetes Job?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "Which Pods does addedAffinity apply to?",
+      "question": "which pods does addedAffinity apply to",
       "reference": "The addedAffinity is applied to all Pods that set .spec.schedulerName to foo-scheduler , in addition to the NodeAffinity specified in the PodSpec.",
       "question_type": "factual",
       "gold_chunk_id": "bcfa091d-4f7c-50ff-be05-757ecbf65cd6",
@@ -1145,10 +1298,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A076"
+      "id": "A076",
+      "question_original": "Which Pods does addedAffinity apply to?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What does setting .spec.startingDeadlineSeconds to 200 allow?",
+      "question": "what does setting .spec.startingDeadlineSeconds=200 allow",
       "reference": ".spec.startingDeadlineSeconds field is optional. ... For example, if it is set to 200 , it allows a Job to be created for up to 200 seconds after the actual schedule.",
       "question_type": "exact_token",
       "gold_chunk_id": "d50e202c-29cb-520b-8665-b66008ce1708",
@@ -1160,10 +1315,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 0.938,
-      "id": "A077"
+      "id": "A077",
+      "question_original": "What does setting .spec.startingDeadlineSeconds to 200 allow?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I reserve a PersistentVolume so that other PVCs cannot bind to it?",
+      "question": "how can I reserve a PV so no other PVC can bind to it?",
       "reference": "Specify the relevant PersistentVolumeClaim in the claimRef field of the PV so that other PVCs can not bind to it.",
       "question_type": "procedural",
       "gold_chunk_id": "72e6650a-6460-55d3-b6ba-8d72b5b725f6",
@@ -1175,7 +1332,9 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A078"
+      "id": "A078",
+      "question_original": "How do I reserve a PersistentVolume so that other PVCs cannot bind to it?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
       "question": "What does the RestartAllContainers action do?",
@@ -1193,7 +1352,7 @@
       "id": "A079"
     },
     {
-      "question": "What does the EndpointSlice controller do when a readiness probe fails?",
+      "question": "what does the endpointslice controller do when a readiness probe fails",
       "reference": "If the readiness probe returns a failed state, the EndpointSlice controller removes the Pod's IP address from the EndpointSlices of all Services that match the Pod.",
       "question_type": "factual",
       "gold_chunk_id": "ab709b75-08ff-5a4d-91ad-d7a480de4b72",
@@ -1205,10 +1364,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A081"
+      "id": "A081",
+      "question_original": "What does the EndpointSlice controller do when a readiness probe fails?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What is the role of the Kubernetes scheduler?",
+      "question": "what does the kubernetes scheduler do",
       "reference": "A scheduler watches for newly created Pods that have no Node assigned. For every Pod that the scheduler discovers, the scheduler becomes responsible for finding the best Node for that Pod to run on.",
       "question_type": "factual",
       "gold_chunk_id": "7b977637-bbad-5d73-a842-1b530b0cf42f",
@@ -1220,10 +1381,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A082"
+      "id": "A082",
+      "question_original": "What is the role of the Kubernetes scheduler?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "How do I remove a failed etcd member from the cluster?",
+      "question": "how to delete a failed etcd member from the cluster?",
       "reference": "etcdctl member remove 8211f1d0f64f3269",
       "question_type": "procedural",
       "gold_chunk_id": "8a953379-5e45-5003-809c-972793b97319",
@@ -1235,10 +1398,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A083"
+      "id": "A083",
+      "question_original": "How do I remove a failed etcd member from the cluster?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "If I specify a loadBalancerIP but my cloud provider does not support the feature, what happens to the loadBalancerIP field I set?",
+      "question": "what happens to loadBalancerIP if the cloud provider doesn't support it?",
       "reference": "If you specify a loadBalancerIP but your cloud provider does not support the feature, the loadbalancerIP field that you set is ignored.",
       "question_type": "factual",
       "gold_chunk_id": "ce7d218d-76bb-599f-88dd-489702dd3732",
@@ -1250,10 +1415,12 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A084"
+      "id": "A084",
+      "question_original": "If I specify a loadBalancerIP but my cloud provider does not support the feature, what happens to the loadBalancerIP field I set?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
-      "question": "What type of volume can only be used as a statically created PersistentVolume?",
+      "question": "which volume type can only be used as a static PersistentVolume?",
       "reference": "A local volume represents a mounted local storage device such as a disk, partition or directory.\n\nLocal volumes can only be used as a statically created PersistentVolume. Dynamic provisioning is not supported.",
       "question_type": "factual",
       "gold_chunk_id": "ab075388-f18c-5031-bf2e-674de42b8b08",
@@ -1265,7 +1432,9 @@
       "category": "answerable",
       "expected_behaviour": "answer",
       "lexical_grounding": 1.0,
-      "id": "A085"
+      "id": "A085",
+      "question_original": "What type of volume can only be used as a statically created PersistentVolume?",
+      "naturalised_by": "openai/gpt-oss-120b"
     },
     {
       "id": "U001",

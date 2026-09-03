@@ -25,6 +25,7 @@ import logfire
 
 from app.agents.graph import build_graph
 from app.agents.state import CONVERSATIONAL
+from app.gateway import daily_quota_exhausted
 from app.guardrails import guard, initialize_rails, rails_ready
 
 
@@ -102,19 +103,47 @@ def run_item(item: dict, agent=None, with_guardrails: bool = True) -> dict:
     return record
 
 
+class DailyQuotaExhausted(RuntimeError):
+    """A model ran out of daily tokens mid-run; the rest of the run is worthless."""
+
+
 def run_items(
     items: list[dict],
     pace_seconds: float = 1.0,
     with_guardrails: bool = True,
     progress=None,
 ) -> list[dict]:
-    """Run a list of items sequentially, paced to stay under per-model TPM."""
+    """
+    Run a list of items sequentially, stopping if a daily token budget runs out.
+
+    `pace_seconds` spaces calls out to stay under per-minute limits. It cannot
+    help with a per-day limit, and pretending otherwise is what made an earlier
+    run so misleading: it pushed on through 73 consecutive failures and then
+    reported the wreckage as behaviour metrics - "answerable 0.373", which reads
+    like a quality regression rather than an exhausted budget.
+
+    So a per-day 429 aborts. Records gathered before the abort are returned and
+    are perfectly good; the caller marks the run partial rather than scoring it.
+    """
     agent = build_graph()
-    records = []
+    records: list[dict] = []
     for i, item in enumerate(items):
         records.append(run_item(item, agent=agent, with_guardrails=with_guardrails))
         if progress:
             progress(i + 1, len(items), records[-1])
+
+        exhausted = daily_quota_exhausted()
+        if exhausted:
+            error = DailyQuotaExhausted(
+                f"Daily token budget exhausted for: {', '.join(sorted(exhausted))}. "
+                f"Stopped after {len(records)} of {len(items)} items. "
+                "Groq's per-day window is rolling, so budget returns gradually "
+                "over the next 24h; re-run then."
+            )
+            # Carry the completed records so the caller can keep them.
+            error.records = records
+            raise error
+
         if i < len(items) - 1:
             time.sleep(pace_seconds)
     return records

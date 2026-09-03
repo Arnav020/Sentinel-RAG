@@ -53,19 +53,31 @@ def graph_env(monkeypatch):
         chunks=None,
         retrieval_error=False,
         answer="A Job supports OnFailure or Never [1].",
+        context_answers=True,
     ):
         def fake_search(query, limit=None, doc_topics=None):
             if retrieval_error:
                 raise RetrievalError("qdrant down")
             return list(chunks or [])
 
-        def fake_select(query, candidates, top_n=None, threshold=None):
+        def fake_select(query, candidates, top_n=None, threshold=None, extra_queries=None):
             kept = [c for c in candidates if (c.rerank_score or 0) >= 0.3]
             top = max((c.rerank_score or 0) for c in candidates) if candidates else 0.0
             return kept, top
 
         monkeypatch.setattr(retriever_mod, "search", fake_search)
         monkeypatch.setattr(retriever_mod, "select_relevant", fake_select)
+        # Stub the answer-presence gate too. Without this every graph test would
+        # reach for a real model. It fails open, so the tests would still pass -
+        # while quietly making network calls the unit tier promises not to make.
+        gate_saw = []
+
+        def fake_gate(q, chunks):
+            gate_saw.append(q)
+            return (context_answers, True)
+
+        monkeypatch.setattr(retriever_mod, "context_answers_question", fake_gate)
+        build.gate_saw = gate_saw
 
         def fake_complete(messages, *, model=None, feature="rag", **kw):
             reply = plan_reply if feature == "planner" else answer
@@ -122,6 +134,48 @@ class TestGraphRouting:
         )
         run(agent, "How do I bake sourdough bread?")
         assert calls == [], "abstention must not spend a generation call"
+
+    def test_abstains_when_context_does_not_answer(self, graph_env):
+        """
+        The gate that catches what relevance cannot: passages score highly on
+        shared vocabulary but do not contain the answer. On the eval set this
+        was 3 of 28 out-of-corpus questions reaching the generator.
+        """
+        agent = graph_env(chunks=[make_chunk(0, 0.95), make_chunk(1, 0.91)], context_answers=False)
+        out = run(agent, "What are the Kubernetes SIG groups?")
+        assert out["abstained"] is True
+        assert out["citations"] == []
+        assert "could not find" in out["final_answer"].lower()
+
+    def test_gate_judges_a_self_contained_question(self, graph_env):
+        """
+        The gate must never be handed a fragment.
+
+        This has been wrong in both directions. Gating on the planner's old
+        keyword phrase ("Namespace definition first in manifest") rejected 12 of
+        83 answerable questions whose gold passage sat at rank 1. Gating on the
+        raw message instead would refuse every follow-up, because "could you
+        elaborate?" is not answerable by any passage on its own.
+
+        The planner now emits a self-contained question - references resolved -
+        and that is what both retrieval and the gate see.
+        """
+        resolved = "Can you explain Kubernetes Pods in more detail?"
+        agent = graph_env(plan_reply=resolved, chunks=[make_chunk(0, 0.99)])
+        run(agent, "could you elaborate?")
+
+        assert graph_env.gate_saw == [resolved], (
+            f"gate was given {graph_env.gate_saw!r} rather than the resolved question"
+        )
+        assert "elaborate" not in graph_env.gate_saw[0].lower(), (
+            "gate received the unresolved follow-up fragment"
+        )
+
+    def test_entailment_pass_is_recorded_in_the_trace(self, graph_env):
+        agent = graph_env(chunks=[make_chunk(0, 0.95)], context_answers=True)
+        out = run(agent, "What restart policies can a Job use?")
+        assert out["abstained"] is False
+        assert any("Answer presence" in step for step in out["plan"])
 
     def test_retrieval_outage_is_distinct_from_not_covered(self, graph_env):
         agent = graph_env(retrieval_error=True)

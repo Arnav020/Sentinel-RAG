@@ -135,6 +135,27 @@ class Settings:
     # confident answers to out-of-corpus questions. Deliberately conservative.
     VECTOR_FALLBACK_THRESHOLD = _float("VECTOR_FALLBACK_THRESHOLD", 0.55)
 
+    # --- ANSWER-PRESENCE GATE -------------------------------------------------
+    # A cross-encoder scores topical relatedness, not whether an answer is
+    # present, so the relevance threshold cannot reject an in-domain question the
+    # corpus does not cover. This gate asks one small model directly, over the
+    # top few passages, and is what takes the retrieval-stage false-answer rate
+    # toward zero instead of relying on the generator to decline.
+    #
+    # Fails OPEN: an outage must not cause mass false abstentions, and the
+    # generator's decline instruction is still downstream.
+    ENTAILMENT_GATE_ENABLED = _flag("ENTAILMENT_GATE_ENABLED", True)
+    # safeguard-20b rather than gpt-oss-20b, for two measured reasons. On a
+    # 10-case probe over the known hard negatives it scored 9/10 against 8/10 -
+    # it alone rejected "Topology Aware Hints", which the corpus discusses only
+    # as the unrelated `trafficDistribution` field. And it keeps the gate's
+    # token load off gpt-oss-20b, which already runs the planner on every
+    # request; sharing one model's daily budget between both risked the planner
+    # degrading mid-evaluation.
+    ENTAILMENT_MODEL = os.getenv("ENTAILMENT_MODEL", "openai/gpt-oss-safeguard-20b")
+    ENTAILMENT_TOP_K = _int("ENTAILMENT_TOP_K", 3)
+    ENTAILMENT_MAX_CHARS = _int("ENTAILMENT_MAX_CHARS", 1100)
+
     # --- GROQ ----------------------------------------------------------------
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 

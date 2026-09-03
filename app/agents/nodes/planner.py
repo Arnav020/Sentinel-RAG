@@ -20,7 +20,7 @@ from app.config import settings
 from app.gateway import LLMError, complete
 from app.services.scope import get_scope
 
-_PROMPT = """You rewrite user messages into search queries for a {subject} documentation assistant.
+_PROMPT = """You rewrite user messages into self-contained questions for a {subject} documentation assistant.
 
 The knowledge base covers:
 {scope}
@@ -32,21 +32,54 @@ Decide between two outputs:
    answerable purely from the conversation history (for example "what did I
    just ask?").
 
-2. Otherwise reply with a search query: a short noun phrase of 3-12 words in
-   the vocabulary the documentation itself would use. Resolve pronouns and
-   follow-ups against the history, so "how do I scale it?" after a question
-   about Deployments becomes "scale a Deployment replicas".
+2. Otherwise reply with a SELF-CONTAINED QUESTION - a complete question that
+   makes sense on its own, without the conversation.
 
-Reply with the query alone. No explanation, no quotes, no URL, no file path,
-and never a full sentence.
+   Preserve exactly what was asked. Do not compress the question into keywords
+   and do not swap in a nearby technical term: "how does an HPA decide how many
+   replicas to run" is a different question from "HorizontalPodAutoscaler
+   scaling behaviour", and answering the second does not answer the first.
+
+   Your only real job is to resolve references. Pronouns, "it", "that", and
+   bare follow-ups like "elaborate" or "why?" must be replaced with the subject
+   from the conversation history, so the question stands alone.
+
+Then, on a second line, give the exact identifiers a documentation page would
+use for this - field names, API kinds, camelCase spellings, allowed values.
+Dense retrieval is sensitive to spelling: "restart policies" and
+"RestartPolicy" embed differently, and the passage that answers a question
+often uses the identifier rather than the prose form. Both queries are searched.
+
+Reply in exactly this form, and nothing else:
+
+QUESTION: <the self-contained question>
+KEYWORDS: <identifiers and exact terms, or the key nouns if there are none>
 
 Examples:
-  "hi there"                                 -> CONVERSATIONAL
-  "what did I just ask?"                     -> CONVERSATIONAL
-  "How do I monitor a Job?"                  -> Kubernetes Job status monitoring
-  "how does HPA scale my pods"               -> HorizontalPodAutoscaler scaling behaviour
-  "what about memory?"  (after CPU limits)   -> container memory limits and requests
-  "tell me about the weather"                -> weather forecast
+  "hi there"                                -> CONVERSATIONAL
+  "what did I just ask?"                    -> CONVERSATIONAL
+  "hi there"
+      -> CONVERSATIONAL
+
+  "what restart policies can a Job use?"
+      -> QUESTION: What restart policies can a Kubernetes Job use?
+         KEYWORDS: Job pod template restartPolicy Never OnFailure allowed
+
+  "how does HPA scale my pods"
+      -> QUESTION: How does a HorizontalPodAutoscaler decide how many replicas to run?
+         KEYWORDS: HorizontalPodAutoscaler desiredReplicas currentMetricValue algorithm
+
+  "what about memory?"  (after CPU limits)
+      -> QUESTION: How do I set memory limits and requests on a container?
+         KEYWORDS: resources limits requests memory container
+
+  "could you elaborate?"  (after Pods)
+      -> QUESTION: Can you explain Kubernetes Pods in more detail?
+         KEYWORDS: Pod containers shared namespaces volumes pod template
+
+  "tell me about the weather"
+      -> QUESTION: What is the weather forecast?
+         KEYWORDS: weather forecast
 
 Note the last example: rewrite the query even when it is clearly outside the
 knowledge base. Deciding what the documentation covers is not your job - the
@@ -83,24 +116,92 @@ def planner_node(state: AgentState) -> dict:
         normalised = decision.strip().strip(".,!?\"'`").upper()
         is_conversational = normalised == "CONVERSATIONAL"
 
-        # A multi-line or over-long reply means the model explained itself
-        # instead of answering; the first line is the usable part.
-        if not is_conversational:
-            decision = decision.splitlines()[0].strip().strip("\"'`")
-            if len(decision) > 200 or not decision:
-                decision = user_message
-
-        logfire.info(f"Planner decision: {'CONVERSATIONAL' if is_conversational else decision}")
+        question, keywords = _parse(decision, user_message)
+        logfire.info(f"Planner decision: {'CONVERSATIONAL' if is_conversational else question}")
 
     if is_conversational:
         return {
             "current_query": CONVERSATIONAL,
+            "search_terms": "",
             "status": "Answering from the conversation.",
             "plan": ["Intent: conversational", "Retrieval: skipped"],
         }
 
+    plan = ["Intent: documentation lookup", f"Search query: {question}"]
+    if keywords:
+        plan.append(f"Keyword query: {keywords}")
+
     return {
-        "current_query": decision,
-        "status": f"Searching the knowledge base for: {decision}",
-        "plan": ["Intent: documentation lookup", f"Search query: {decision}"],
+        "current_query": question,
+        "search_terms": keywords,
+        "status": f"Searching the knowledge base for: {question}",
+        "plan": plan,
     }
+
+
+def _parse(raw: str, fallback: str) -> tuple[str, str]:
+    """
+    Pull the question and keyword line out of the planner's reply.
+
+    Deliberately forgiving: a malformed reply degrades to "use the first usable
+    line as the question, no keywords", which is exactly the behaviour before
+    the keyword query existed. A parse failure must never cost an answer.
+    """
+    question, keywords = "", ""
+    for line in raw.splitlines():
+        line = line.strip().strip("`")
+        low = line.lower()
+        if low.startswith("question:"):
+            question = line.split(":", 1)[1].strip().strip("\"'")
+        elif low.startswith("keywords:"):
+            keywords = line.split(":", 1)[1].strip().strip("\"'")
+
+    if not question:
+        # No labels - take the first substantial line, as before.
+        for line in raw.splitlines():
+            line = line.strip().strip("\"'`")
+            if len(line) > 8:
+                question = line
+                break
+
+    if not question or len(question) > 300:
+        question = fallback
+    return question, _clean_keywords(keywords)
+
+
+# Special tokens a model can emit verbatim when it fails to stop cleanly, plus
+# the run-on filler that follows them.
+_STOP_MARKERS = ("<|endoftext|>", "<|", "```", "##")
+
+
+def _clean_keywords(raw: str) -> str:
+    """
+    Trim the keyword line down to something worth searching, or drop it.
+
+    Small models do not always stop after the keyword line. One observed reply
+    was "Pod containers shared namespaces volumes pod template<|endoftext|>## 1
+    The - - - ... ... .. ...", which is a valid keyword list with several
+    hundred characters of degenerate continuation welded on. Searching that
+    wastes an embedding call and shows the user a broken trace, so the
+    continuation is cut at the first stop marker and anything still looking
+    degenerate is discarded entirely.
+
+    Dropping is safe: no keyword query simply means the search falls back to the
+    question alone, which is where it started.
+    """
+    text = raw
+    for marker in _STOP_MARKERS:
+        cut = text.find(marker)
+        if cut != -1:
+            text = text[:cut]
+
+    words = [w for w in text.split() if any(ch.isalnum() for ch in w)]
+    if not words:
+        return ""
+
+    # Degenerate output is dominated by punctuation runs and repeats.
+    if len({w.lower() for w in words}) < len(words) * 0.6:
+        return ""
+
+    cleaned = " ".join(words[:20])
+    return cleaned if 2 <= len(cleaned) <= 200 else ""

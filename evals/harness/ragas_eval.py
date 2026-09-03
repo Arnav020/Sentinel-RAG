@@ -313,10 +313,15 @@ async def _score_all(
         (out_dir / f"ragas_summary.{judge_slug}.json").write_text(
             json.dumps(summary, indent=2), encoding="utf-8"
         )
-        (out_dir / "ragas_per_item.json").write_text(
-            json.dumps(per_item, indent=2), encoding="utf-8"
-        )
-        (out_dir / "ragas_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        # The unnamespaced copies are the ones every reader looks at, so they
+        # merge rather than overwrite. Namespacing alone was not enough: a
+        # quota-starved run that scored one metric replaced a completed
+        # faithfulness measurement (n=38, coverage 1.0) with "every sample
+        # failed to score". Metrics are scored one per session around a daily
+        # token cap, so partial runs into one directory are the normal case,
+        # not the exception.
+        _write_merged(out_dir / "ragas_per_item.json", per_item, merge_per_item)
+        _write_merged(out_dir / "ragas_summary.json", summary, merge_summaries)
 
     # Per-stratum faithfulness, so a weak topic cannot hide inside the mean.
     by_topic: dict[str, list[float]] = {}
@@ -392,3 +397,56 @@ def score_records(
     summary["generation_model"] = settings.GENERATION_MODEL
     summary["wall_seconds"] = round(time.time() - started, 1)
     return summary
+
+
+def better_of(previous: dict | None, fresh: dict) -> dict:
+    """
+    Return whichever of two measurements of the same metric is stronger.
+
+    Two rules, both learned the hard way:
+      * an error entry never replaces a real measurement - a run that could not
+        score tells you nothing about a run that could;
+      * between two real measurements the one with more scored samples wins,
+        because coverage is what makes a judged number defensible.
+    """
+    if not isinstance(previous, dict) or "value" not in previous:
+        return fresh
+    if "value" not in fresh:
+        return previous
+    return fresh if fresh.get("n", 0) >= previous.get("n", 0) else previous
+
+
+def merge_summaries(previous: dict, fresh: dict) -> dict:
+    """Metric-by-metric best-of merge of two RAGAS summary blocks."""
+    merged = dict(previous) if isinstance(previous, dict) else {}
+    for name, entry in fresh.items():
+        if name == "faithfulness_by_topic":
+            # Empty when this run did not score faithfulness; keep what we had.
+            if isinstance(entry, dict) and entry:
+                merged[name] = entry
+        elif isinstance(entry, dict):
+            merged[name] = better_of(merged.get(name), entry)
+        else:
+            merged[name] = entry
+    return merged
+
+
+def merge_per_item(previous: dict, fresh: dict) -> dict:
+    """Union of per-item scores; a null never overwrites a recorded score."""
+    merged = {k: dict(v) for k, v in previous.items()} if isinstance(previous, dict) else {}
+    for item_id, metrics in fresh.items():
+        dest = merged.setdefault(item_id, {})
+        for metric, value in metrics.items():
+            if value is not None:
+                dest[metric] = value
+    return merged
+
+
+def _write_merged(path: Path, fresh: dict, merge) -> None:
+    previous: dict = {}
+    if path.exists():
+        try:
+            previous = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            print(f"    warning: {path.name} is unreadable; replacing it")
+    path.write_text(json.dumps(merge(previous, fresh), indent=2), encoding="utf-8")

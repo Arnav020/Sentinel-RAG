@@ -1,0 +1,194 @@
+{
+  "meta": {
+    "timestamp": "2026-09-03T07:47:04.565566+00:00",
+    "git_sha": "ee9d871",
+    "python": "3.12.3",
+    "corpus": {
+      "collection": "kubernetes_docs",
+      "points": 2069,
+      "status": "green",
+      "dim": 768,
+      "topics": {
+        "workloads": 459,
+        "security": 246,
+        "configuration": 234,
+        "storage": 227,
+        "networking": 213,
+        "operations": 191,
+        "architecture": 189,
+        "autoscaling": 167,
+        "jobs": 143
+      }
+    },
+    "dataset": {
+      "path": "C:\\Users\\HP\\Desktop\\Coding\\Agentic RAG\\evals\\dataset\\golden_dataset.json",
+      "total": 145,
+      "counts": {
+        "answerable": 83,
+        "unanswerable_in_domain": 18,
+        "off_domain": 10,
+        "adversarial": 16,
+        "conversational": 4,
+        "uncovered_retrieval_positive": 14
+      },
+      "generator_model": "openai/gpt-oss-20b",
+      "verifier_model": "qwen/qwen3.8-27b"
+    },
+    "config": {
+      "embedding_model": "all-mpnet-base-v2",
+      "generation_model": "openai/gpt-oss-120b",
+      "planner_model": "openai/gpt-oss-20b",
+      "judge_model": "qwen/qwen3.6-27b",
+      "rerank_threshold": 0.35,
+      "retrieval_candidates": 60,
+      "retrieval_top_n": 5,
+      "chunk_size": 1200,
+      "chunk_overlap": 150,
+      "use_gateway": false
+    },
+    "packages": {
+      "ragas": "0.4.3",
+      "sentence-transformers": "5.7.0",
+      "qdrant-client": "1.19.0",
+      "flashrank": "0.2.10",
+      "nemoguardrails": "0.23.0",
+      "langgraph": "1.2.11"
+    }
+  },
+  "behaviour_INVALID": {
+    "pipeline_errors": {
+      "count": 73,
+      "n": 145
+    },
+    "behaviour": {
+      "answerable": {
+        "metric": "answerable_correct_behaviour",
+        "value": 0.3735,
+        "ci_low": 0.2772,
+        "ci_high": 0.481,
+        "n": 83
+      },
+      "unanswerable_in_domain": {
+        "metric": "unanswerable_in_domain_correct_behaviour",
+        "value": 0.5556,
+        "ci_low": 0.3372,
+        "ci_high": 0.7544,
+        "n": 18
+      },
+      "off_domain": {
+        "metric": "off_domain_correct_behaviour",
+        "value": 0.9,
+        "ci_low": 0.5958,
+        "ci_high": 0.9821,
+        "n": 10
+      },
+      "uncovered_retrieval_positive": {
+        "metric": "uncovered_retrieval_positive_correct_behaviour",
+        "value": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.2153,
+        "n": 14
+      },
+      "conversational": {
+        "metric": "conversational_correct_behaviour",
+        "value": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.4899,
+        "n": 4
+      },
+      "adversarial_attack": {
+        "metric": "adversarial_attack_correct_behaviour",
+        "value": 0.625,
+        "ci_low": 0.3057,
+        "ci_high": 0.8632,
+        "n": 8
+      },
+      "adversarial_benign": {
+        "metric": "adversarial_benign_correct_behaviour",
+        "value": 0.25,
+        "ci_low": 0.0715,
+        "ci_high": 0.5907,
+        "n": 8
+      }
+    },
+    "hard_negative_decline_rate": {
+      "metric": "hard_negative_decline_rate",
+      "value": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.2153,
+      "n": 14
+    },
+    "hard_negative_judged": false,
+    "retrieval_false_answer_rate": {
+      "metric": "retrieval_false_answer_rate",
+      "value": 0.0714,
+      "ci_low": 0.0198,
+      "ci_high": 0.2265,
+      "n": 28
+    },
+    "false_answer_rate": {
+      "metric": "false_answer_rate",
+      "value": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.1206,
+      "n": 28
+    },
+    "generator_rescued": 2,
+    "false_abstention_rate": {
+      "metric": "false_abstention_rate",
+      "value": 0.0482,
+      "ci_low": 0.0189,
+      "ci_high": 0.1175,
+      "n": 83
+    },
+    "citation_rate": {
+      "metric": "citation_rate",
+      "value": 0.9277,
+      "ci_low": 0.8511,
+      "ci_high": 0.9664,
+      "n": 83
+    },
+    "guardrails": {
+      "true_positives": 5,
+      "false_negatives": 3,
+      "false_positives": 5,
+      "recall": {
+        "metric": "guardrail_recall",
+        "value": 0.625,
+        "ci_low": 0.3057,
+        "ci_high": 0.8632,
+        "n": 8
+      },
+      "precision": {
+        "metric": "guardrail_precision",
+        "value": 0.5,
+        "ci_low": 0.2366,
+        "ci_high": 0.7634,
+        "n": 10
+      },
+      "benign_block_rate": {
+        "metric": "benign_block_rate",
+        "value": 0.0549,
+        "ci_low": 0.0237,
+        "ci_high": 0.1222,
+        "n": 91
+      }
+    },
+    "latency_seconds": {
+      "mean": 5.993,
+      "p50": 3.981,
+      "p95": 26.412,
+      "max": 57.518,
+      "n": 72
+    },
+    "answer_chars": {
+      "metric": "answer_chars",
+      "value": 505.2973,
+      "ci_low": 366.3784,
+      "ci_high": 654.8649,
+      "n": 37
+    },
+    "duration_seconds": 1046.8,
+    "invalidated": "INVALID - quota exhaustion, not a measurement. 73 of 145 items failed with generation_failed after openai/gpt-oss-safeguard-20b (199,881/200,000) and openai/gpt-oss-120b (199,336/200,000) hit their per-DAY token cap partway through. Every rate reported here is computed over the surviving items and is meaningless: answerable 0.373 and hard_negative_decline_rate 0.000 reflect failed calls, not system behaviour. The run should have aborted at the first per-day 429; it now does (pipeline.DailyQuotaExhausted), and run_eval records an incomplete run instead of scoring the remains."
+  }
+}

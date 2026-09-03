@@ -199,3 +199,48 @@ class TestConfigValidation:
     def test_local_endpoint_detection(self, monkeypatch, url, local):
         monkeypatch.setattr(Settings, "QDRANT_URL", url)
         assert Settings.qdrant_is_local() is local
+
+
+class TestPlannerKeywordParsing:
+    """
+    The planner emits a second, keyword-shaped query. Small models do not always
+    stop cleanly after it, and a run-on continuation must never reach retrieval.
+    """
+
+    def test_parses_question_and_keywords(self):
+        from app.agents.nodes.planner import _parse
+
+        q, kw = _parse(
+            "QUESTION: What restart policies can a Kubernetes Job use?\n"
+            "KEYWORDS: Job pod template restartPolicy Never OnFailure allowed",
+            "fallback",
+        )
+        assert q == "What restart policies can a Kubernetes Job use?"
+        assert kw == "Job pod template restartPolicy Never OnFailure allowed"
+
+    def test_unlabelled_reply_degrades_to_the_first_line(self):
+        from app.agents.nodes.planner import _parse
+
+        q, kw = _parse("How does a HorizontalPodAutoscaler scale?", "fallback")
+        assert q == "How does a HorizontalPodAutoscaler scale?"
+        assert kw == ""
+
+    def test_empty_reply_falls_back_to_the_user_message(self):
+        from app.agents.nodes.planner import _parse
+
+        assert _parse("", "what is a Pod") == ("what is a Pod", "")
+
+    def test_run_on_continuation_is_cut_at_the_stop_marker(self):
+        """Observed live: a valid keyword list with degenerate filler welded on."""
+        from app.agents.nodes.planner import _clean_keywords
+
+        raw = (
+            "Pod containers shared namespaces volumes pod template<|endoftext|>## 1  The - - - ..."
+        )
+        assert _clean_keywords(raw) == "Pod containers shared namespaces volumes pod template"
+
+    def test_degenerate_keywords_are_dropped_entirely(self):
+        from app.agents.nodes.planner import _clean_keywords
+
+        assert _clean_keywords("the the the the the the") == ""
+        assert _clean_keywords("... ... ... ...") == ""

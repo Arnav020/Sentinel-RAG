@@ -1,6 +1,6 @@
 {
   "meta": {
-    "timestamp": "2026-09-02T19:15:49.683033+00:00",
+    "timestamp": "2026-09-02T19:42:08.492395+00:00",
     "git_sha": "523854d",
     "python": "3.12.3",
     "corpus": {
@@ -82,22 +82,27 @@
     "context_precision": {
       "metric": "context_precision",
       "error": "every sample failed to score",
-      "failed": 38
+      "failed": 23
     },
     "context_recall": {
       "metric": "context_recall",
-      "error": "every sample failed to score",
-      "failed": 38
+      "value": 0.8889,
+      "ci_low": 0.6667,
+      "ci_high": 1.0,
+      "n": 6,
+      "scored": 6,
+      "failed": 17,
+      "coverage": 0.261
     },
     "answer_correctness": {
       "metric": "answer_correctness",
       "error": "every sample failed to score",
-      "failed": 38
+      "failed": 23
     },
     "answer_relevancy": {
       "metric": "answer_relevancy",
       "error": "every sample failed to score",
-      "failed": 38
+      "failed": 23
     },
     "faithfulness_by_topic": {
       "architecture": {
@@ -164,14 +169,14 @@
         "n": 10
       }
     },
-    "scored_samples": 38,
+    "scored_samples": 23,
     "scorable_samples": 82,
     "answerable_total": 83,
     "subsampled": true,
     "judge_model": "qwen/qwen3.8-27b",
     "generation_model": "openai/gpt-oss-120b",
-    "wall_seconds": 1408.0,
-    "duration_seconds": 1408.1,
+    "wall_seconds": 39449.7,
+    "duration_seconds": 39449.7,
     "cross_check": {
       "metric": "faithfulness",
       "judge": "qwen/qwen3.6-27b",

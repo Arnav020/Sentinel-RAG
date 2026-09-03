@@ -28,10 +28,12 @@ class AgentState(TypedDict, total=False):
     # operator.add appends rather than replaces, so history accumulates.
     messages: Annotated[list[dict], operator.add]
     current_query: str
+    search_terms: str
     retrieved: list[RetrievedChunk]
     citations: list[dict]
     top_score: float
     abstained: bool
+    entailment_checked: bool
     plan: list[str]
     status: str
     final_answer: str

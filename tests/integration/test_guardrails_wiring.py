@@ -27,7 +27,7 @@ def gate(monkeypatch):
             rails, "detect_injection", lambda m: (any(s in m for s in injections), 0.99)
         )
         monkeypatch.setattr(
-            rails, "is_off_topic", lambda m: any(s in m.lower() for s in off_topics)
+            rails, "is_off_topic", lambda m, history="": any(s in m.lower() for s in off_topics)
         )
         rails.reset_for_tests()
         rails.initialize_rails()
@@ -100,7 +100,7 @@ class TestMultiTurnCoverage:
             return ("DAN" in message, 0.99)
 
         monkeypatch.setattr(rails, "detect_injection", spy)
-        monkeypatch.setattr(rails, "is_off_topic", lambda m: False)
+        monkeypatch.setattr(rails, "is_off_topic", lambda m, history="": False)
         rails.reset_for_tests()
         rails.initialize_rails()
 
@@ -111,7 +111,7 @@ class TestMultiTurnCoverage:
     def test_history_is_cleared_between_calls(self, gate, monkeypatch):
         seen: list[str] = []
         monkeypatch.setattr(rails, "detect_injection", lambda m: (seen.append(m), (False, 0.0))[1])
-        monkeypatch.setattr(rails, "is_off_topic", lambda m: False)
+        monkeypatch.setattr(rails, "is_off_topic", lambda m, history="": False)
         rails.reset_for_tests()
         rails.initialize_rails()
 
