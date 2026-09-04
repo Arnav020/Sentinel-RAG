@@ -316,39 +316,6 @@ Non-root, CPU-only torch.
 
 ---
 
-## Engineering notes
-
-### The bug that cost four answers
-
-The answer-presence gate read the top **3** passages while the generator received
-the top **5**. It was answering *"is the answer present?"* about a context two
-passages smaller than the one about to be used — and refusing questions whose
-evidence sat in passages 4 and 5.
-
-Replaying all 33 questions the gate had rejected: widening it to 5 recovered
-**4 of 5** false abstentions and preserved **all 28** correct rejections.
-
-Then the fix caused two *new* refusals. Keeping it token-neutral meant a smaller
-per-passage character cap, and the passages ran 654/1081/252/972/671 characters —
-a flat cap sliced the two carrying the answer while the 252-char passage wasted
-408 of its allowance. One answer sentence was cut 43 characters in. The cap is
-now a **shared budget**: short passages donate to long ones, same total cost.
-
-The generalisable lesson is now a test: when changing a gate, replay the
-questions it *accepted* as well as the ones it rejected. Testing only the
-rejections is exactly why the second defect got through.
-
-### Earlier findings
-
-| Finding | Impact |
-|---|---|
-| The cross-encoder score was computed and discarded one line before use | No relevance decision existed; out-of-corpus questions got confident answers |
-| The chunker split on blank lines the HTML and Office loaders never emit | 58% of chunks ended mid-sentence; ~19% of needed evidence never reached the model |
-| Candidate depth of 20 was the binding constraint, not the reranker | Vector recall for the gold chunk: 0.81 @20 → 1.00 @100 |
-| `thread_id` was client-supplied and keyed conversation memory | Any caller could read another user's conversation |
-| Eval results lived only in Streamlit session state | Published numbers could not be reproduced or regression-tracked |
-| A quota-exhausted eval run scored its own wreckage | "answerable 0.373" read like a quality regression; runs now abort and refuse to score |
-
 ### Known limits
 
 - **Broad questions retrieve poorly.** *"What is a Pod?"* pulls Service
