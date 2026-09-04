@@ -25,7 +25,8 @@ import logfire
 
 from app.agents.graph import build_graph
 from app.agents.state import CONVERSATIONAL
-from app.gateway import daily_quota_exhausted
+from app.config import settings
+from app.gateway import daily_quota_exhausted, tokens_used_since
 from app.guardrails import guard, initialize_rails, rails_ready
 
 
@@ -107,6 +108,43 @@ class DailyQuotaExhausted(RuntimeError):
     """A model ran out of daily tokens mid-run; the rest of the run is worthless."""
 
 
+# Groq's per-minute token allowance, and the fraction of it we aim to occupy.
+# The headroom matters: an item's cost is only known after it runs, so the
+# budget check is always one item stale, and a burst that lands exactly on the
+# limit is a 429 rather than a wait.
+TPM_LIMIT = 8000
+TPM_HEADROOM = 0.75
+_THROTTLE_TIMEOUT = 90.0
+
+# Seed costs, measured on this corpus (prompt + completion, per item). These
+# only prime the throttle; from the first item onward it reads what the models
+# actually spent, so a wrong seed self-corrects within one item.
+_SEED_COST = 1500
+
+
+def _throttle(models: list[str], expected: int = _SEED_COST) -> float:
+    """
+    Block until every model has room in its rolling per-minute budget.
+
+    A flat delay cannot do this job. Items cost wildly different amounts - a
+    blocked question spends 500 tokens, an answered one nearly 3,000 - so a
+    pace tuned for the average runs 50% over on the expensive ones. Measured on
+    a 145-item run, a 1.5s pace produced 236 rate-limit errors before the daily
+    cap was even reached.
+
+    Waiting on measured spend instead means the run costs only what it must:
+    fast through cheap items, slow through expensive ones.
+    """
+    waited = 0.0
+    ceiling = TPM_LIMIT * TPM_HEADROOM
+    while waited < _THROTTLE_TIMEOUT:
+        if all(tokens_used_since(m, 60) + expected <= ceiling for m in models):
+            return waited
+        time.sleep(1.0)
+        waited += 1.0
+    return waited
+
+
 def run_items(
     items: list[dict],
     pace_seconds: float = 1.0,
@@ -114,20 +152,33 @@ def run_items(
     progress=None,
 ) -> list[dict]:
     """
-    Run a list of items sequentially, stopping if a daily token budget runs out.
+    Run a list of items sequentially, throttled by measured token spend.
 
-    `pace_seconds` spaces calls out to stay under per-minute limits. It cannot
-    help with a per-day limit, and pretending otherwise is what made an earlier
-    run so misleading: it pushed on through 73 consecutive failures and then
-    reported the wreckage as behaviour metrics - "answerable 0.373", which reads
-    like a quality regression rather than an exhausted budget.
+    Two limits are enforced, and they are not the same problem:
 
-    So a per-day 429 aborts. Records gathered before the abort are returned and
-    are perfectly good; the caller marks the run partial rather than scoring it.
+      * **Per minute** - handled by `_throttle`, which waits on what the models
+        have actually spent in the last 60 seconds rather than on a fixed sleep.
+      * **Per day** - cannot be waited out, so it aborts. Pushing on through it
+        is what made an earlier run so misleading: 73 consecutive failures, then
+        a summary reporting "answerable 0.373" as though it were a measurement
+        of quality rather than of an exhausted budget.
+
+    Records gathered before an abort are returned and are perfectly good; the
+    caller marks the run partial rather than scoring it.
     """
     agent = build_graph()
+    models = [
+        settings.GENERATION_MODEL,
+        settings.PLANNER_MODEL,
+        settings.ENTAILMENT_MODEL,
+        settings.TOPIC_FILTER_MODEL,
+    ]
+    models = list(dict.fromkeys(models))
+
     records: list[dict] = []
+    throttled = 0.0
     for i, item in enumerate(items):
+        throttled += _throttle(models)
         records.append(run_item(item, agent=agent, with_guardrails=with_guardrails))
         if progress:
             progress(i + 1, len(items), records[-1])
@@ -144,6 +195,9 @@ def run_items(
             error.records = records
             raise error
 
-        if i < len(items) - 1:
+        if i < len(items) - 1 and pace_seconds:
             time.sleep(pace_seconds)
+
+    if throttled:
+        logfire.info(f"Throttled {throttled:.0f}s in total to stay under per-minute limits.")
     return records

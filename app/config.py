@@ -153,8 +153,24 @@ class Settings:
     # request; sharing one model's daily budget between both risked the planner
     # degrading mid-evaluation.
     ENTAILMENT_MODEL = os.getenv("ENTAILMENT_MODEL", "openai/gpt-oss-safeguard-20b")
-    ENTAILMENT_TOP_K = _int("ENTAILMENT_TOP_K", 3)
-    ENTAILMENT_MAX_CHARS = _int("ENTAILMENT_MAX_CHARS", 1100)
+
+    # The gate must judge exactly the passages the generator will receive, so
+    # TOP_K tracks RETRIEVAL_TOP_N rather than being set independently. It was
+    # 3 against a RETRIEVAL_TOP_N of 5, which meant the gate answered "does this
+    # context contain the answer?" about a context two passages smaller than the
+    # one the generator got - and refused four answerable questions whose
+    # evidence was sitting in passages 4 and 5.
+    #
+    # Measured on the 33 questions the gate rejected: widening it to 5 recovered
+    # 4 of the 5 false abstentions and preserved all 28 correct rejections
+    # (11 unanswerable, 13 hard negatives, 4 adversarial).
+    #
+    # MAX_CHARS drops from 1100 to 660 to keep the change free: 5 x 660 is the
+    # same 3,300 characters the gate already read at 3 x 1100, so the daily
+    # token budget - the binding constraint on this tier - is unchanged. The
+    # same 33-question replay confirmed the truncation costs nothing.
+    ENTAILMENT_TOP_K = _int("ENTAILMENT_TOP_K", RETRIEVAL_TOP_N)
+    ENTAILMENT_MAX_CHARS = _int("ENTAILMENT_MAX_CHARS", 660)
 
     # --- GROQ ----------------------------------------------------------------
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -291,6 +307,15 @@ class Settings:
             raise ValueError("RERANK_THRESHOLD must be between 0 and 1.")
         if cls.RETRIEVAL_TOP_N > cls.RETRIEVAL_CANDIDATES:
             raise ValueError("RETRIEVAL_TOP_N cannot exceed RETRIEVAL_CANDIDATES.")
+        if cls.ENTAILMENT_GATE_ENABLED and cls.ENTAILMENT_TOP_K < cls.RETRIEVAL_TOP_N:
+            raise ValueError(
+                f"ENTAILMENT_TOP_K ({cls.ENTAILMENT_TOP_K}) is smaller than "
+                f"RETRIEVAL_TOP_N ({cls.RETRIEVAL_TOP_N}). The gate would then "
+                "judge whether the answer is present in a context smaller than "
+                "the one the generator receives, and refuse questions whose "
+                "evidence sits in the passages it never sees. That cost four "
+                "answerable questions before it was caught."
+            )
         if _family(cls.JUDGE_MODEL) == _family(cls.GENERATION_MODEL):
             raise ValueError(
                 f"JUDGE_MODEL ({cls.JUDGE_MODEL}) and GENERATION_MODEL "

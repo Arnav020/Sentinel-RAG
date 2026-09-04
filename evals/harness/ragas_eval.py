@@ -198,6 +198,20 @@ JUDGE_TPM = 8000
 EST_TOKENS_PER_CALL = 2600
 RATE_LIMIT_BACKOFF = (20, 45, 90, 150)
 
+# A third limit, separate from both of the above and easy to mistake for them:
+# OUTPUT tokens per minute, capped at 1,000. It is checked against the
+# `max_tokens` a request ASKS for, not what it uses, so JUDGE_MAX_TOKENS=6000
+# makes some calls fail outright as "Request too large" rather than being
+# throttled. Measured on a 35-sample faithfulness run: 34 still scored, because
+# the backoff absorbs it, but the run took 25 minutes instead of about 12.
+#
+# Lowering JUDGE_MAX_TOKENS below 1,000 would remove the rejections - and
+# reintroduce the failure it was raised to 6,000 to fix, where a reasoning
+# model's preamble consumes the budget and truncates the JSON. Rejected
+# requests cost wall time but no tokens, so the slower path is the cheaper
+# trade. Left as it is deliberately.
+JUDGE_OTPM = 1000
+
 # The provider also enforces a DAILY token cap (200,000 per model on this tier),
 # which is the binding constraint on how much can be judged - not wall time.
 # Budget roughly: 6 metrics x ~2 calls x ~2,600 tokens = ~14k tokens per sample,

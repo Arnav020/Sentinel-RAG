@@ -181,3 +181,93 @@ class TestRunItemsAbortsOnDailyQuota:
         pipeline = self._harness(monkeypatch, exhausted_after=999)
         items = [{"id": f"A{i:03d}"} for i in range(5)]
         assert len(pipeline.run_items(items, pace_seconds=0.0)) == 5
+
+
+class TestTokenThrottle:
+    """
+    Pacing must follow measured spend, not a fixed delay. Items cost between
+    ~500 and ~3,000 tokens depending on whether they were blocked, abstained or
+    answered, so one sleep value is either wasteful or over the limit - a 1.5s
+    pace drew 236 rate-limit errors on a 145-item run.
+    """
+
+    def test_it_waits_while_a_model_is_over_budget(self, monkeypatch):
+        from evals.harness import pipeline
+
+        spend = {"m": pipeline.TPM_LIMIT}
+        slept = []
+        monkeypatch.setattr(
+            pipeline.time, "sleep", lambda s: (slept.append(s), spend.update(m=0))[0]
+        )
+        monkeypatch.setattr(pipeline, "tokens_used_since", lambda m, w: spend["m"])
+
+        waited = pipeline._throttle(["m"], expected=100)
+        assert slept, "should have waited while over budget"
+        assert waited > 0
+
+    def test_it_does_not_wait_when_there_is_room(self, monkeypatch):
+        from evals.harness import pipeline
+
+        monkeypatch.setattr(pipeline, "tokens_used_since", lambda m, w: 0)
+        monkeypatch.setattr(
+            pipeline.time, "sleep", lambda s: pytest.fail("throttled with budget to spare")
+        )
+        assert pipeline._throttle(["m"], expected=100) == 0.0
+
+    def test_the_busiest_model_gates_the_run(self, monkeypatch):
+        """One saturated model must hold the whole pipeline, not just its own stage."""
+        from evals.harness import pipeline
+
+        usage = {"cheap": 0, "busy": pipeline.TPM_LIMIT}
+        monkeypatch.setattr(pipeline, "tokens_used_since", lambda m, w: usage[m])
+        monkeypatch.setattr(pipeline.time, "sleep", lambda s: usage.update(busy=0))
+
+        assert pipeline._throttle(["cheap", "busy"], expected=100) > 0
+
+    def test_it_gives_up_rather_than_hanging_forever(self, monkeypatch):
+        """A permanently saturated model must not stall the run indefinitely."""
+        from evals.harness import pipeline
+
+        monkeypatch.setattr(pipeline, "tokens_used_since", lambda m, w: pipeline.TPM_LIMIT)
+        monkeypatch.setattr(pipeline.time, "sleep", lambda s: None)
+
+        assert pipeline._throttle(["m"], expected=100) == pipeline._THROTTLE_TIMEOUT
+
+
+class TestSummaryPrinter:
+    """
+    A judged run that ends in a traceback reads like a run that failed.
+
+    `print_summary` assumed every list in a tier was a list of metric dicts and
+    crashed on `metrics_run: ["faithfulness"]` with AttributeError - after 25
+    minutes of paid judging. The scores were already on disk, but nobody
+    reading the console output would have known that.
+    """
+
+    def test_it_survives_a_list_of_plain_values(self, capsys):
+        from evals.run_eval import print_summary
+
+        print_summary(
+            {
+                "ragas": {
+                    "faithfulness": {
+                        "metric": "faithfulness",
+                        "value": 0.894,
+                        "ci_low": 0.833,
+                        "ci_high": 0.949,
+                        "n": 34,
+                    },
+                    "metrics_run": ["faithfulness"],
+                    "judge_model": "qwen/qwen3.8-27b",
+                }
+            }
+        )
+        out = capsys.readouterr().out
+        assert "0.894" in out
+        assert "faithfulness" in out
+
+    def test_it_still_renders_a_list_of_metric_dicts(self, capsys):
+        from evals.run_eval import print_summary
+
+        print_summary({"retrieval": {"retrieval": [{"metric": "hit@5", "value": 0.892, "n": 83}]}})
+        assert "hit@5" in capsys.readouterr().out

@@ -296,3 +296,75 @@ class TestMultiQueryRerank:
         kept, top = rs.select_relevant("q", [chunk(0)], extra_queries=["q", "", "   "])
         assert top == pytest.approx(0.9)
         assert len(kept) == 1
+
+
+class TestGateWindowMatchesGeneratorContext:
+    """
+    The answer-presence gate must judge the same passages the generator gets.
+
+    It did not: ENTAILMENT_TOP_K was 3 while RETRIEVAL_TOP_N was 5, so the gate
+    was asked whether the answer was present in a context two passages smaller
+    than the one about to be used. Measured on the 33 questions the gate
+    rejected, widening it to 5 recovered 4 of 5 false abstentions and kept all
+    28 correct rejections - the questions it had been refusing had their
+    evidence in passages 4 and 5.
+    """
+
+    def test_gate_window_is_not_narrower_than_the_generator_context(self):
+        assert settings.ENTAILMENT_TOP_K >= settings.RETRIEVAL_TOP_N
+
+    def test_validate_rejects_a_narrower_gate_window(self, monkeypatch):
+        # validate() is a classmethod reading cls.X, so the class is what must
+        # be patched - setting the attribute on the instance is invisible to it.
+        cls = type(settings)
+        monkeypatch.setattr(cls, "ENTAILMENT_GATE_ENABLED", True)
+        monkeypatch.setattr(cls, "ENTAILMENT_TOP_K", 3)
+        monkeypatch.setattr(cls, "RETRIEVAL_TOP_N", 5)
+        with pytest.raises(ValueError, match="smaller than"):
+            settings.validate()
+
+    def test_the_widening_was_kept_free(self):
+        """5 x 660 is the same character budget the gate read at 3 x 1100."""
+        budget = settings.ENTAILMENT_TOP_K * settings.ENTAILMENT_MAX_CHARS
+        assert budget <= 3300
+
+
+class TestEntailmentBudgetAllocation:
+    """
+    The gate's character budget is shared, not per-passage.
+
+    A flat cap truncated the passages carrying the answer while short passages
+    left their allowance unused. Measured: five passages of 654/1081/252/972/671
+    characters under a uniform 660 cap sliced one answer sentence 43 characters
+    in, turning two answerable questions into refusals.
+    """
+
+    @staticmethod
+    def _alloc(lengths):
+        from app.services.retrieval.entailment import allocate_budget
+
+        return [len(b) for b in allocate_budget(["x" * n for n in lengths])]
+
+    def test_short_passages_donate_to_long_ones(self):
+        kept = self._alloc([654, 1081, 252, 972, 671])
+        assert kept[2] == 252, "a short passage must never be padded or cut"
+        assert kept[1] > 660, "the long passage must receive the donated budget"
+        assert kept[1] > 617, "the A005 answer sentence must survive"
+
+    def test_nothing_is_truncated_when_everything_fits(self):
+        lengths = [907, 287, 870, 318, 467]  # the A064 case, 2849 total
+        assert self._alloc(lengths) == lengths
+
+    def test_the_total_budget_is_respected(self):
+        budget = settings.ENTAILMENT_TOP_K * settings.ENTAILMENT_MAX_CHARS
+        for lengths in ([5000, 5000, 5000, 5000, 5000], [654, 1081, 252, 972, 671], [9000]):
+            assert sum(self._alloc(lengths)) <= budget
+
+    def test_an_even_split_when_all_passages_are_oversized(self):
+        kept = self._alloc([5000] * 5)
+        assert max(kept) - min(kept) <= 1, "equally oversized passages share equally"
+
+    def test_empty_input_is_handled(self):
+        from app.services.retrieval.entailment import allocate_budget
+
+        assert allocate_budget([]) == []

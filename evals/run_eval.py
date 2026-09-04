@@ -264,9 +264,18 @@ def print_summary(results: dict) -> None:
             if key in ("duration_seconds", "n", "by_topic", "by_question_type"):
                 continue
             if isinstance(value, list):
-                print(f"  {key}:")
-                for entry in value:
-                    show(entry.get("metric", "?"), entry, indent=4)
+                # A list of metric dicts renders as a block; a list of plain
+                # values (`metrics_run: ["faithfulness"]`) renders inline. The
+                # printer used to assume the former and crashed on the latter -
+                # after a 25-minute judged run had already been paid for. The
+                # scores were safely on disk, but a run that ends in a traceback
+                # reads like a run that failed.
+                if all(isinstance(e, dict) for e in value):
+                    print(f"  {key}:")
+                    for entry in value:
+                        show(entry.get("metric", "?"), entry, indent=4)
+                else:
+                    print(f"  {key:40} {', '.join(str(e) for e in value)}")
             elif isinstance(value, dict) and "value" in value:
                 show(key, value)
             elif isinstance(value, dict) and key == "behaviour":

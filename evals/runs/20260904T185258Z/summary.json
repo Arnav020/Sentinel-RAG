@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "timestamp": "2026-09-04T18:53:06.931181+00:00",
+    "git_sha": "6c26db7",
+    "python": "3.12.3",
+    "corpus": {
+      "collection": "kubernetes_docs",
+      "points": 2069,
+      "status": "green",
+      "dim": 768,
+      "topics": {
+        "workloads": 459,
+        "security": 246,
+        "configuration": 234,
+        "storage": 227,
+        "networking": 213,
+        "operations": 191,
+        "architecture": 189,
+        "autoscaling": 167,
+        "jobs": 143
+      }
+    },
+    "dataset": {
+      "path": "C:\\Users\\HP\\Desktop\\Coding\\Agentic RAG\\evals\\dataset\\golden_dataset.json",
+      "total": 145,
+      "counts": {
+        "answerable": 83,
+        "unanswerable_in_domain": 18,
+        "off_domain": 10,
+        "adversarial": 16,
+        "conversational": 4,
+        "uncovered_retrieval_positive": 14
+      },
+      "generator_model": "openai/gpt-oss-20b",
+      "verifier_model": "qwen/qwen3.8-27b"
+    },
+    "config": {
+      "embedding_model": "all-mpnet-base-v2",
+      "generation_model": "openai/gpt-oss-120b",
+      "planner_model": "openai/gpt-oss-20b",
+      "judge_model": "qwen/qwen3.6-27b",
+      "rerank_threshold": 0.35,
+      "retrieval_candidates": 60,
+      "retrieval_top_n": 5,
+      "chunk_size": 1200,
+      "chunk_overlap": 150,
+      "use_gateway": false
+    },
+    "packages": {
+      "ragas": "0.4.3",
+      "sentence-transformers": "5.7.0",
+      "qdrant-client": "1.19.0",
+      "flashrank": "0.2.10",
+      "nemoguardrails": "0.23.0",
+      "langgraph": "1.2.11"
+    }
+  },
+  "behaviour_PARTIAL": {
+    "incomplete": "Daily token budget exhausted for: openai/gpt-oss-safeguard-20b. Stopped after 65 of 145 items. Groq's per-day window is rolling, so budget returns gradually over the next 24h; re-run then.",
+    "items_completed": 65,
+    "items_total": 145,
+    "duration_seconds": 1108.4,
+    "note": "PARTIAL - 65 of 145 items, aborted cleanly when openai/gpt-oss-safeguard-20b hit its per-day token cap. Not scored, and must not be quoted. Kept because the 65 items confirm the entailment-gate fix end to end: A010, A048, A056 and A066 all moved from abstained to answered. It also exposed two regressions (A005, A064) caused by uniform per-passage truncation, now fixed by shared budget allocation in entailment.allocate_budget - which this run predates."
+  }
+}

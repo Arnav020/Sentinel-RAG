@@ -46,6 +46,47 @@ answers the question". Sharing vocabulary is not answering.
 Reply with exactly one word: YES or NO."""
 
 
+def allocate_budget(bodies: list[str]) -> list[str]:
+    """
+    Fit passages into a shared character budget instead of capping each one.
+
+    A flat per-passage cap is the wrong shape for real documentation. In one
+    measured case the five passages ran 654, 1081, 252, 972 and 671 characters:
+    a uniform 660 cap truncated the only two that carried the answer while the
+    252-character passage left 408 of its allowance unused. Two answerable
+    questions were refused that way - the answer sentence in one of them was
+    sliced 43 characters in.
+
+    Short passages therefore donate their unused share to long ones. The total
+    stays at `ENTAILMENT_TOP_K * ENTAILMENT_MAX_CHARS`, so the token cost - the
+    binding constraint on this tier - is exactly what it was, but the cut lands
+    on the passage that can spare it rather than uniformly.
+    """
+    if not bodies:
+        return []
+
+    total = settings.ENTAILMENT_TOP_K * settings.ENTAILMENT_MAX_CHARS
+    if sum(len(b) for b in bodies) <= total:
+        return list(bodies)
+
+    # Repeatedly give every still-oversized passage an equal share of what is
+    # left, so that the passages under their share release the remainder.
+    remaining, share = total, {i: len(b) for i, b in enumerate(bodies)}
+    unresolved = set(share)
+    while unresolved:
+        allowance = remaining // len(unresolved)
+        fits = {i for i in unresolved if share[i] <= allowance}
+        if not fits:
+            for i in unresolved:
+                share[i] = allowance
+            break
+        for i in fits:
+            remaining -= share[i]
+        unresolved -= fits
+
+    return [b[: share[i]] for i, b in enumerate(bodies)]
+
+
 def _verdict_says_yes(raw: str) -> bool:
     """
     Read the model's verdict.
@@ -73,9 +114,8 @@ def context_answers_question(question: str, chunks: list[RetrievedChunk]) -> tup
         return True, False
 
     top = chunks[: settings.ENTAILMENT_TOP_K]
-    passages = "\n\n".join(
-        f"[{i}] {c.body[: settings.ENTAILMENT_MAX_CHARS]}" for i, c in enumerate(top, 1)
-    )
+    bodies = allocate_budget([c.body for c in top])
+    passages = "\n\n".join(f"[{i}] {b}" for i, b in enumerate(bodies, 1))
     user = f"QUESTION: {question}\n\nPASSAGES:\n{passages}"
 
     try:
