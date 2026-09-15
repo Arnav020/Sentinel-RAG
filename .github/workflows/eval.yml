@@ -1,26 +1,37 @@
 name: Evaluation
 
-# The judged tiers cost real tokens and are non-deterministic, so they do not
-# gate a pull request. They run nightly and on demand, and every run is
-# committed as a versioned artifact under evals/runs/ - a number nobody can
-# re-open is not evidence.
+# On demand only. The judged tiers cost real tokens and are non-deterministic,
+# so they neither gate a pull request nor run on a schedule:
+#
+#   * A nightly `--tier all` would spend the entire 200k/day Groq budget of
+#     every model, every night, on a run nobody asked for - and the provider
+#     enforces that cap per model, so it would also block real use.
+#   * It needs the production Qdrant index (verify_dataset checks that every
+#     gold chunk still exists there), which means live credentials in CI.
+#   * It failed every night for two weeks at the first step needing those
+#     credentials, and mailed about it every morning.
+#
+# Results are uploaded as a downloadable artifact. They are NOT auto-committed:
+# a bot pushing to main defeats the point of a curated evals/runs/ history.
+# Commit a run deliberately, after reading it.
+#
+# Required repository secrets: QDRANT_CLUSTER_ENDPOINT, QDRANT_API_KEY,
+# GROQ_API_KEY (JUDGE_GROQ optional).
 
 on:
-  schedule:
-    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       tier:
-        description: Which tier to run
+        description: Which tier to run (retrieval is free and deterministic)
         type: choice
-        default: all
+        default: retrieval
         options: [retrieval, behaviour, ragas, all]
       pace:
-        description: Seconds between LLM calls (rate-limit pacing)
-        default: "1.5"
+        description: Extra seconds between items (0 = throttle on measured token spend only)
+        default: "0"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   evaluate:
@@ -68,8 +79,8 @@ jobs:
       - name: Run evaluation
         run: |
           python -m evals.run_eval \
-            --tier "${{ github.event.inputs.tier || 'all' }}" \
-            --pace "${{ github.event.inputs.pace || '1.5' }}"
+            --tier "${{ github.event.inputs.tier || 'retrieval' }}" \
+            --pace "${{ github.event.inputs.pace || '0' }}"
 
       - name: Check retrieval against baseline
         run: python -m tools.check_baseline
@@ -79,16 +90,3 @@ jobs:
         with:
           name: eval-run
           path: evals/runs/
-
-      - name: Commit the run artifact
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add evals/runs/
-          if git diff --staged --quiet; then
-            echo "no new artifact"
-          else
-            git commit -m "eval: scheduled run $(date -u +%Y-%m-%dT%H:%MZ)"
-            git push
-          fi
