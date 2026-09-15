@@ -1,0 +1,12 @@
+{
+  "faithfulness": {
+    "metric": "faithfulness",
+    "value": 0.9119,
+    "ci_low": 0.8403,
+    "ci_high": 0.9664,
+    "n": 36,
+    "scored": 36,
+    "failed": 0,
+    "coverage": 1.0
+  }
+}

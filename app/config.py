@@ -242,11 +242,15 @@ class Settings:
     # Judge must be a different model family from GENERATION_MODEL, or the
     # system grades its own output. validate() enforces that.
     # Qwen, so the judge is a different family from the gpt-oss generator -
-    # `validate()` refuses to start otherwise. 3.6 rather than 3.8 purely for
-    # quota: each model has its own 200k/day token budget, and 3.8's was spent.
-    # Both were verified to produce valid structured output for RAGAS, and both
-    # scored faithfulness within 0.03 of each other on the same samples.
-    JUDGE_MODEL = os.getenv("JUDGE_MODEL", "qwen/qwen3.6-27b")
+    # `validate()` refuses to start otherwise.
+    #
+    # This was qwen3.6-27b until the provider withdrew it (404, 2026-09-16),
+    # the second time a model this project depended on has disappeared from
+    # under it. qwen3.8-27b is now the only judge-family model the account can
+    # serve, which also means one 200k/day token budget for all judged metrics
+    # rather than two. Every evaluation artifact records the judge id, so runs
+    # remain attributable to the model that actually scored them.
+    JUDGE_MODEL = os.getenv("JUDGE_MODEL", "qwen/qwen3.8-27b")
     # Falls back to the serving key, but says so. The previous code fell back
     # silently while its comments claimed the judge had "its own rate-limit
     # budget" - and the repo's own notes record that Groq quotas are per

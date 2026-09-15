@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 if sys.platform == "win32":
@@ -160,7 +161,16 @@ def main() -> int:
     current = measure_fixture() if args.fixture else measure_full()
 
     if args.update or not path.exists():
+        # Provenance travels with the numbers. A baseline is a claim about a
+        # specific commit and corpus; without the SHA and fingerprint it cannot
+        # be told apart from a stale one - which is exactly how the previous
+        # baseline came to gate on pre-naturalization figures for two weeks.
+        from evals.run_eval import _corpus_fingerprint, _git_sha
+
         payload = {
+            "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "git_sha": _git_sha(),
+            "corpus": _corpus_fingerprint(),
             "metrics": {k: round(v, 4) for k, v in current.items()},
             "config": {
                 "embedding_model": settings.EMBEDDING_MODEL,

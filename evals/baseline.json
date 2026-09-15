@@ -1,18 +1,36 @@
 {
-  "metrics": {
-    "hit@1": 0.7349,
-    "hit@3": 0.9157,
-    "hit@5": 0.9639,
-    "hit@60": 0.988,
-    "doc_hit@1": 0.9398,
-    "doc_hit@5": 1.0,
-    "ndcg@5": 0.8597,
-    "gold_containment@k": 0.9639,
-    "mrr": 0.8275,
-    "correct_abstention_rate": 0.9286,
-    "false_abstention_rate": 0.0
+  "recorded_at": "2026-09-15T20:24:53+00:00",
+  "git_sha": "95fb422",
+  "corpus": {
+    "collection": "kubernetes_docs",
+    "points": 2069,
+    "status": "green",
+    "dim": 768,
+    "topics": {
+      "workloads": 459,
+      "security": 246,
+      "configuration": 234,
+      "storage": 227,
+      "networking": 213,
+      "operations": 191,
+      "architecture": 189,
+      "autoscaling": 167,
+      "jobs": 143
+    }
   },
-  "recorded_from": "evals\\runs\\20260902T185234Z\\summary.json",
+  "metrics": {
+    "hit@1": 0.6627,
+    "hit@3": 0.8434,
+    "hit@5": 0.8916,
+    "hit@60": 0.9759,
+    "doc_hit@1": 0.8916,
+    "doc_hit@5": 0.988,
+    "ndcg@5": 0.7874,
+    "gold_containment@k": 0.9078,
+    "mrr": 0.7628,
+    "correct_abstention_rate": 0.9286,
+    "false_abstention_rate": 0.012
+  },
   "config": {
     "embedding_model": "all-mpnet-base-v2",
     "rerank_threshold": 0.35,

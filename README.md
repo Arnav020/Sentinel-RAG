@@ -8,7 +8,7 @@ Most RAG systems answer everything. This one measures when it shouldn't — and 
 
 `LangGraph` · `Qdrant` · `NeMo Guardrails` · `FlashRank` · `FastAPI` · `Docker` · `RAGAS`
 
-**0.000** fabrication rate · **1.000** correct refusal on every out-of-scope slice · **0.894** faithfulness · **154** tests
+**0.000** fabrication rate · **1.000** correct refusal on every out-of-scope slice · **0.912** faithfulness · **154** tests
 
 <img src="public/landing_page.png" alt="Sentinel-RAG — three-pane interface showing the derived knowledge base, the grounded answer pane, and the sources/context/trace inspector" width="100%">
 
@@ -36,7 +36,7 @@ falsifiable — a framework with no corpus has no measured abstention rate. 2,06
 passages of official kubernetes.io documentation give every number below a
 denominator you can check.
 
-**Contents:** [Results](#results) · [Architecture](#architecture) · [Guardrails](#guardrails) · [Evaluation](#evaluation) · [Portability](#portability) · [Testing & CI](#testing--ci) · [Run it](#run-it) · [Engineering notes](#engineering-notes)
+**Contents:** [Results](#results) · [Architecture](#architecture) · [Guardrails](#guardrails) · [Evaluation](#evaluation) · [Portability](#portability) · [Testing & CI](#testing--ci) · [Run it](#run-it) · [Known limits](#known-limits)
 
 ---
 
@@ -56,14 +56,14 @@ denominator is not a result. All reproducible from committed artifacts in
 | Hard negatives declined by the generator | **1.000** | [0.785, 1.000] | 14 |
 | Jailbreaks blocked | **1.000** | [0.676, 1.000] | 8 |
 | Benign lookalikes correctly allowed | **1.000** | [0.676, 1.000] | 8 |
-| Refused a question it *could* have answered | 0.060 | [0.026, 0.133] | 83 |
+| Refused a question it *could* have answered | 0.048 | [0.019, 0.117] | 83 |
 
-145 items, **0 pipeline errors**, latency p50 **4.6 s** / p95 6.7 s.
+145 items, **0 pipeline errors**, latency p50 **5.6 s** / p95 8.2 s.
 
 Two things the table would otherwise hide: across the full 91-item benign set
 **one** question was wrongly blocked (guardrail precision **0.889**), and the
-`citation_rate` of 0.928 counts refusals as uncited — **every answer actually
-produced carried a citation, 77/77**.
+`citation_rate` of 0.940 counts refusals as uncited — **every answer actually
+produced carried a citation, 78/78**.
 
 ### Retrieval — measured with no LLM in the loop
 
@@ -88,17 +88,15 @@ circularity, removed.
 
 | Metric | Score | 95% CI | n | Coverage |
 |---|---|---|---|---|
-| **Faithfulness** — is every claim supported by the retrieved passages? | **0.894** | [0.833, 0.949] | 34 | 0.97 |
+| **Faithfulness** — is every claim supported by the retrieved passages? | **0.912** | [0.840, 0.966] | 36 | 1.00 |
 
 Judged by `qwen3.8-27b`, a different model family from the `gpt-oss-120b` system
 under test. `Settings.validate()` **refuses to start** if judge and generator
 share a family, so self-evaluation cannot creep in via a config change.
 
-> **Measurement status.** The refusal table is run `20260904T174827Z`. One fix
-> has since landed — the answer-presence gate now judges the same passages the
-> generator receives ([why](#the-bug-that-cost-four-answers)) — expected to move
-> false-abstention from 0.060 to ~0.024. It gets re-measured, not assumed,
-> before that number changes here.
+All three tables come from a single run, `evals/runs/20260915T191810Z`, so
+every number describes the same code and the same corpus. Per-topic faithfulness
+ranges 0.71–1.00; the lowest, `architecture`, is n=5.
 
 ---
 
@@ -282,7 +280,7 @@ name** rather than as a quiet drop in quality:
 
 - `test_out_of_corpus_questions_abstain` — the flagship guard, against real vectors
 - `test_failure_marks_degraded_and_uses_vector_threshold` — the dead-reranker trap
-- `test_gate_window_is_not_narrower_than_the_generator_context` — see below
+- `test_gate_window_is_not_narrower_than_the_generator_context` — the answer-presence gate must judge exactly the passages the generator receives
 - `test_owner_cannot_be_impersonated` — session isolation
 - `test_internal_error_is_5xx_not_200` — an outage must look like an outage
 - `test_embedding_dim_comes_from_the_model` — one line, prevents silent index corruption

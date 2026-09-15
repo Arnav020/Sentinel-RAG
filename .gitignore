@@ -45,6 +45,8 @@ DOCS/
 # Editor and agent tooling, machine-specific (absolute .venv paths).
 .claude/
 
+Sentinel-RAG-Interview-Guide.pdf
+
 # ---------------------------------------------------------------------------
 # Deliberately NOT ignored, and worth stating why:
 #

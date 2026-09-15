@@ -1,0 +1,473 @@
+{
+  "meta": {
+    "timestamp": "2026-09-15T20:04:24.028272+00:00",
+    "git_sha": "95fb422",
+    "python": "3.12.3",
+    "corpus": {
+      "collection": "kubernetes_docs",
+      "points": 2069,
+      "status": "green",
+      "dim": 768,
+      "topics": {
+        "workloads": 459,
+        "security": 246,
+        "configuration": 234,
+        "storage": 227,
+        "networking": 213,
+        "operations": 191,
+        "architecture": 189,
+        "autoscaling": 167,
+        "jobs": 143
+      }
+    },
+    "dataset": {
+      "path": "C:\\Users\\HP\\Desktop\\Coding\\Agentic RAG\\evals\\dataset\\golden_dataset.json",
+      "total": 145,
+      "counts": {
+        "answerable": 83,
+        "unanswerable_in_domain": 18,
+        "off_domain": 10,
+        "adversarial": 16,
+        "conversational": 4,
+        "uncovered_retrieval_positive": 14
+      },
+      "generator_model": "openai/gpt-oss-20b",
+      "verifier_model": "qwen/qwen3.8-27b"
+    },
+    "config": {
+      "embedding_model": "all-mpnet-base-v2",
+      "generation_model": "openai/gpt-oss-120b",
+      "planner_model": "openai/gpt-oss-20b",
+      "judge_model": "qwen/qwen3.8-27b",
+      "rerank_threshold": 0.35,
+      "retrieval_candidates": 60,
+      "retrieval_top_n": 5,
+      "chunk_size": 1200,
+      "chunk_overlap": 150,
+      "use_gateway": false
+    },
+    "packages": {
+      "ragas": "0.4.3",
+      "sentence-transformers": "5.7.0",
+      "qdrant-client": "1.19.0",
+      "flashrank": "0.2.10",
+      "nemoguardrails": "0.23.0",
+      "langgraph": "1.2.11"
+    }
+  },
+  "retrieval": {
+    "n": {
+      "answerable": 83,
+      "should_abstain": 28
+    },
+    "retrieval": [
+      {
+        "metric": "hit@1",
+        "value": 0.6627,
+        "ci_low": 0.5558,
+        "ci_high": 0.7552,
+        "n": 83
+      },
+      {
+        "metric": "hit@3",
+        "value": 0.8434,
+        "ci_low": 0.7502,
+        "ci_high": 0.9061,
+        "n": 83
+      },
+      {
+        "metric": "hit@5",
+        "value": 0.8916,
+        "ci_low": 0.8066,
+        "ci_high": 0.9419,
+        "n": 83
+      },
+      {
+        "metric": "hit@60",
+        "value": 0.9759,
+        "ci_low": 0.9163,
+        "ci_high": 0.9934,
+        "n": 83
+      },
+      {
+        "metric": "doc_hit@1",
+        "value": 0.8916,
+        "ci_low": 0.8066,
+        "ci_high": 0.9419,
+        "n": 83
+      },
+      {
+        "metric": "doc_hit@5",
+        "value": 0.988,
+        "ci_low": 0.9349,
+        "ci_high": 0.9979,
+        "n": 83
+      },
+      {
+        "metric": "ndcg@5",
+        "value": 0.7874,
+        "ci_low": 0.7107,
+        "ci_high": 0.8564,
+        "n": 83
+      },
+      {
+        "metric": "gold_containment@k",
+        "value": 0.9078,
+        "ci_low": 0.8416,
+        "ci_high": 0.9639,
+        "n": 83
+      },
+      {
+        "metric": "mrr",
+        "value": 0.7628
+      }
+    ],
+    "abstention_on_answerable": {
+      "metric": "false_abstention_rate",
+      "value": 0.012,
+      "ci_low": 0.0021,
+      "ci_high": 0.0651,
+      "n": 83
+    },
+    "gold_survived_threshold": {
+      "metric": "gold_survived_threshold",
+      "value": 0.8916,
+      "ci_low": 0.8066,
+      "ci_high": 0.9419,
+      "n": 83
+    },
+    "abstention_on_unanswerable": {
+      "metric": "correct_abstention_rate",
+      "value": 0.9286,
+      "ci_low": 0.7735,
+      "ci_high": 0.9802,
+      "n": 28
+    },
+    "abstention_unanswerable_in_domain": {
+      "metric": "correct_abstention_unanswerable_in_domain",
+      "value": 0.8889,
+      "ci_low": 0.672,
+      "ci_high": 0.969,
+      "n": 18
+    },
+    "abstention_off_domain": {
+      "metric": "correct_abstention_off_domain",
+      "value": 1.0,
+      "ci_low": 0.7225,
+      "ci_high": 1.0,
+      "n": 10
+    },
+    "by_topic": {
+      "architecture": {
+        "metric": "hit@5",
+        "value": 1.0,
+        "ci_low": 0.7225,
+        "ci_high": 1.0,
+        "n": 10
+      },
+      "autoscaling": {
+        "metric": "hit@5",
+        "value": 0.6,
+        "ci_low": 0.2307,
+        "ci_high": 0.8824,
+        "n": 5
+      },
+      "configuration": {
+        "metric": "hit@5",
+        "value": 1.0,
+        "ci_low": 0.6457,
+        "ci_high": 1.0,
+        "n": 7
+      },
+      "jobs": {
+        "metric": "hit@5",
+        "value": 1.0,
+        "ci_low": 0.6097,
+        "ci_high": 1.0,
+        "n": 6
+      },
+      "networking": {
+        "metric": "hit@5",
+        "value": 0.9091,
+        "ci_low": 0.6226,
+        "ci_high": 0.9838,
+        "n": 11
+      },
+      "operations": {
+        "metric": "hit@5",
+        "value": 0.8333,
+        "ci_low": 0.4365,
+        "ci_high": 0.9699,
+        "n": 6
+      },
+      "security": {
+        "metric": "hit@5",
+        "value": 0.8571,
+        "ci_low": 0.4869,
+        "ci_high": 0.9743,
+        "n": 7
+      },
+      "storage": {
+        "metric": "hit@5",
+        "value": 0.8182,
+        "ci_low": 0.523,
+        "ci_high": 0.9486,
+        "n": 11
+      },
+      "workloads": {
+        "metric": "hit@5",
+        "value": 0.9,
+        "ci_low": 0.699,
+        "ci_high": 0.9721,
+        "n": 20
+      }
+    },
+    "by_question_type": {
+      "exact_token": {
+        "metric": "hit@5",
+        "value": 0.9167,
+        "ci_low": 0.6461,
+        "ci_high": 0.9851,
+        "n": 12
+      },
+      "factual": {
+        "metric": "hit@5",
+        "value": 0.8704,
+        "ci_low": 0.7558,
+        "ci_high": 0.9358,
+        "n": 54
+      },
+      "procedural": {
+        "metric": "hit@5",
+        "value": 0.9412,
+        "ci_low": 0.7302,
+        "ci_high": 0.9895,
+        "n": 17
+      }
+    },
+    "duration_seconds": 260.9
+  },
+  "behaviour": {
+    "pipeline_errors": {
+      "count": 0,
+      "n": 145
+    },
+    "behaviour": {
+      "answerable": {
+        "metric": "answerable_correct_behaviour",
+        "value": 0.9398,
+        "ci_low": 0.8666,
+        "ci_high": 0.974,
+        "n": 83
+      },
+      "unanswerable_in_domain": {
+        "metric": "unanswerable_in_domain_correct_behaviour",
+        "value": 1.0,
+        "ci_low": 0.8241,
+        "ci_high": 1.0,
+        "n": 18
+      },
+      "off_domain": {
+        "metric": "off_domain_correct_behaviour",
+        "value": 1.0,
+        "ci_low": 0.7225,
+        "ci_high": 1.0,
+        "n": 10
+      },
+      "uncovered_retrieval_positive": {
+        "metric": "uncovered_retrieval_positive_correct_behaviour",
+        "value": 1.0,
+        "ci_low": 0.7847,
+        "ci_high": 1.0,
+        "n": 14
+      },
+      "conversational": {
+        "metric": "conversational_correct_behaviour",
+        "value": 1.0,
+        "ci_low": 0.5101,
+        "ci_high": 1.0,
+        "n": 4
+      },
+      "adversarial_attack": {
+        "metric": "adversarial_attack_correct_behaviour",
+        "value": 1.0,
+        "ci_low": 0.6756,
+        "ci_high": 1.0,
+        "n": 8
+      },
+      "adversarial_benign": {
+        "metric": "adversarial_benign_correct_behaviour",
+        "value": 1.0,
+        "ci_low": 0.6756,
+        "ci_high": 1.0,
+        "n": 8
+      }
+    },
+    "hard_negative_decline_rate": {
+      "metric": "hard_negative_decline_rate",
+      "value": 1.0,
+      "ci_low": 0.7847,
+      "ci_high": 1.0,
+      "n": 14
+    },
+    "hard_negative_judged": false,
+    "retrieval_false_answer_rate": {
+      "metric": "retrieval_false_answer_rate",
+      "value": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.1206,
+      "n": 28
+    },
+    "false_answer_rate": {
+      "metric": "false_answer_rate",
+      "value": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.1206,
+      "n": 28
+    },
+    "generator_rescued": 0,
+    "false_abstention_rate": {
+      "metric": "false_abstention_rate",
+      "value": 0.0482,
+      "ci_low": 0.0189,
+      "ci_high": 0.1175,
+      "n": 83
+    },
+    "citation_rate": {
+      "metric": "citation_rate",
+      "value": 0.9398,
+      "ci_low": 0.8666,
+      "ci_high": 0.974,
+      "n": 83
+    },
+    "guardrails": {
+      "true_positives": 8,
+      "false_negatives": 0,
+      "false_positives": 1,
+      "recall": {
+        "metric": "guardrail_recall",
+        "value": 1.0,
+        "ci_low": 0.6756,
+        "ci_high": 1.0,
+        "n": 8
+      },
+      "precision": {
+        "metric": "guardrail_precision",
+        "value": 0.8889,
+        "ci_low": 0.565,
+        "ci_high": 0.9801,
+        "n": 9
+      },
+      "benign_block_rate": {
+        "metric": "benign_block_rate",
+        "value": 0.011,
+        "ci_low": 0.0019,
+        "ci_high": 0.0596,
+        "n": 91
+      }
+    },
+    "latency_seconds": {
+      "mean": 5.187,
+      "p50": 5.647,
+      "p95": 8.187,
+      "max": 17.965,
+      "n": 145
+    },
+    "answer_chars": {
+      "metric": "answer_chars",
+      "value": 443.988,
+      "ci_low": 363.8072,
+      "ci_high": 528.8072,
+      "n": 83
+    },
+    "duration_seconds": 2203.6
+  },
+  "ragas": {
+    "faithfulness": {
+      "metric": "faithfulness",
+      "value": 0.9119,
+      "ci_low": 0.8403,
+      "ci_high": 0.9664,
+      "n": 36,
+      "scored": 36,
+      "failed": 0,
+      "coverage": 1.0
+    },
+    "faithfulness_by_topic": {
+      "architecture": {
+        "metric": "faithfulness",
+        "value": 0.7111,
+        "ci_low": 0.3333,
+        "ci_high": 0.9778,
+        "n": 5
+      },
+      "autoscaling": {
+        "metric": "faithfulness",
+        "value": 0.9062,
+        "ci_low": 0.8125,
+        "ci_high": 1.0,
+        "n": 2
+      },
+      "configuration": {
+        "metric": "faithfulness",
+        "value": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "n": 3
+      },
+      "jobs": {
+        "metric": "faithfulness",
+        "value": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "n": 2
+      },
+      "networking": {
+        "metric": "faithfulness",
+        "value": 0.8533,
+        "ci_low": 0.6933,
+        "ci_high": 1.0,
+        "n": 5
+      },
+      "operations": {
+        "metric": "faithfulness",
+        "value": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "n": 3
+      },
+      "security": {
+        "metric": "faithfulness",
+        "value": 0.9744,
+        "ci_low": 0.9231,
+        "ci_high": 1.0,
+        "n": 3
+      },
+      "storage": {
+        "metric": "faithfulness",
+        "value": 0.9167,
+        "ci_low": 0.75,
+        "ci_high": 1.0,
+        "n": 4
+      },
+      "workloads": {
+        "metric": "faithfulness",
+        "value": 0.956,
+        "ci_low": 0.8866,
+        "ci_high": 1.0,
+        "n": 9
+      }
+    },
+    "scored_samples": 36,
+    "scorable_samples": 78,
+    "answerable_total": 83,
+    "subsampled": true,
+    "metrics_run": [
+      "faithfulness"
+    ],
+    "judge_model": "qwen/qwen3.8-27b",
+    "generation_model": "openai/gpt-oss-120b",
+    "wall_seconds": 2471.0,
+    "duration_seconds": 2471.0
+  }
+}
